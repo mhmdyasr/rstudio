@@ -20,6 +20,7 @@
 #include <core/Error.hpp>
 #include <core/Exec.hpp>
 
+#include <core/Algorithm.hpp>
 #include <core/spelling/HunspellSpellingEngine.hpp>
 
 #include <r/RSexp.hpp>
@@ -61,7 +62,6 @@ SEXP rs_checkSpelling(SEXP wordSEXP)
    return r::sexp::create(isCorrect, &rProtect);
 }
 
-
 json::Object dictionaryAsJson(const core::spelling::HunspellDictionary& dict)
 {
    json::Object dictJson;
@@ -96,6 +96,45 @@ FilePath allLanguagesDir()
                                           "dictionaries/languages-system");
 }
 
+FilePath customDictionariesDir()
+{
+   return module_context::userScratchPath().childPath(
+                                          "dictionaries/custom");
+}
+
+// This responds to the request path of /dictionaries/<dict>/<dict>.dic
+// and returns the file at <userScratchDir>/dictionaries/<dict>.dic
+// Typo.js expects a hardcoded path in this form and we want to avoid forking it
+void handleDictionaryRequest(const http::Request& request, http::Response* pResponse)
+{
+   std::string prefix = "/dictionaries/";
+   std::string fileName = http::util::pathAfterPrefix(request, prefix);
+   std::vector<std::string> splat = core::algorithm::split(fileName, "/");
+
+   if (splat.size() != 2)
+   {
+      pResponse->setNotFoundError(request);
+      return;
+   }
+
+   // preference order: custom -> user -> system -> pre-installed
+   if (customDictionariesDir().complete(splat[1]).exists())
+   {
+      pResponse->setCacheableFile(customDictionariesDir().complete(splat[1]), request);
+   }
+   else if (allLanguagesDir().complete(splat[1]).exists())
+   {
+      pResponse->setCacheableFile(allLanguagesDir().complete(splat[1]), request);
+   }
+   else if (options().hunspellDictionariesPath().complete(splat[1]).exists())
+   {
+      pResponse->setCacheableFile(options().hunspellDictionariesPath().complete(splat[1]), request);
+   }
+   else
+   {
+      pResponse->setNotFoundError(request);
+   }
+}
 
 Error checkSpelling(const json::JsonRpcRequest& request,
                     json::JsonRpcResponse* pResponse)
@@ -262,6 +301,22 @@ void onUserSettingsChanged()
    syncSpellingEngineDictionaries();
 }
 
+SEXP rs_dictionariesPath()
+{
+   r::sexp::Protect protect;
+   return r::sexp::create(
+            options().hunspellDictionariesPath().absolutePath(),
+            &protect);
+}
+
+SEXP rs_userDictionariesPath()
+{
+   r::sexp::Protect protect;
+   return r::sexp::create(
+            userDictionariesDir().absolutePath(),
+            &protect);
+}
+
 } // anonymous namespace
 
 
@@ -299,11 +354,10 @@ core::json::Object spellingPrefsContextAsJson()
 
 Error initialize()
 {
-   R_CallMethodDef methodDef;
-   methodDef.name = "rs_checkSpelling" ;
-   methodDef.fun = (DL_FUNC) rs_checkSpelling ;
-   methodDef.numArgs = 1;
-   r::routines::addCallMethod(methodDef);
+   RS_REGISTER_CALL_METHOD(rs_checkSpelling);
+   RS_REGISTER_CALL_METHOD(rs_dictionariesPath);
+   RS_REGISTER_CALL_METHOD(rs_userDictionariesPath);
+
 
    // initialize spelling engine
    using namespace rstudio::core::spelling;
@@ -327,6 +381,7 @@ Error initialize()
       (bind(registerRpcMethod, "add_custom_dictionary", addCustomDictionary))
       (bind(registerRpcMethod, "remove_custom_dictionary", removeCustomDictionary))
       (bind(registerRpcMethod, "install_all_dictionaries", installAllDictionaries))
+      (bind(registerUriHandler, "/dictionaries", handleDictionaryRequest))
       (bind(sourceModuleRFile, "SessionSpelling.R"));
    return initBlock.execute();
 }

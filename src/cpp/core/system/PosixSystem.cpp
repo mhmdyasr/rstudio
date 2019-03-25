@@ -64,17 +64,18 @@
 #include <core/Algorithm.hpp>
 #include <core/DateTime.hpp>
 #include <core/Error.hpp>
-#include <core/Log.hpp>
+
 #include <core/FilePath.hpp>
 #include <core/FileInfo.hpp>
-#include <core/FileLogWriter.hpp>
+
 #include <core/FileSerializer.hpp>
 #include <core/Exec.hpp>
+#include <core/LogOptions.hpp>
 #include <core/SyslogLogWriter.hpp>
-#include <core/StderrLogWriter.hpp>
 #include <core/StringUtils.hpp>
 #include <core/SafeConvert.hpp>
 #include <core/FileSerializer.hpp>
+#include <core/Thread.hpp>
 
 #include <core/system/ProcessArgs.hpp>
 #include <core/system/Environment.hpp>
@@ -109,8 +110,6 @@ Error ignoreSig(int signal)
       return Success();
    }
 }
-
-
    
 int signalForType(SignalType type)
 {
@@ -183,67 +182,84 @@ Error realPath(const std::string& path, FilePath* pRealPath)
   *pRealPath = FilePath(realPath);
    return Success();
 }
-
-
-namespace {
-
-// main log writer
-LogWriter* s_pLogWriter = NULL;
-
-// additional log writers
-std::vector<boost::shared_ptr<LogWriter> > s_logWriters;
-
-} // anonymous namespace
      
 void initHook()
 {
 }
 
-void initializeSystemLog(const std::string& programIdentity, int logLevel)
-{
-   if (s_pLogWriter)
-      delete s_pLogWriter;
+// statics defined in System.cpp
+extern boost::shared_ptr<LogOptions> s_logOptions;
+extern boost::recursive_mutex s_loggingMutex;
+extern std::string s_programIdentity;
 
-   s_pLogWriter = new SyslogLogWriter(programIdentity, logLevel);
+Error initializeSystemLog(const std::string& programIdentity,
+                          int logLevel,
+                          bool enableConfigReload)
+{
+   RECURSIVE_LOCK_MUTEX(s_loggingMutex)
+   {
+      // create default syslog logger options
+      SysLoggerOptions options;
+      s_logOptions.reset(new LogOptions(programIdentity, logLevel, kLoggerTypeSysLog, options));
+      s_programIdentity = programIdentity;
+
+      Error error = initLog();
+      if (error)
+         return error;
+   }
+   END_LOCK_MUTEX
+
+   if (enableConfigReload)
+      initializeLogConfigReload();
+
+   return Success();
 }
 
-void initializeStderrLog(const std::string& programIdentity, int logLevel)
-{
-   if (s_pLogWriter)
-      delete s_pLogWriter;
+namespace {
 
-   s_pLogWriter = new StderrLogWriter(programIdentity, logLevel);
+void logConfigReloadThreadFunc(sigset_t waitMask)
+{
+   for(;;)
+   {
+      // wait for SIGHUP
+      int sig = 0;
+      int result = ::sigwait(&waitMask, &sig);
+      if (result != 0)
+         return;
+
+      if (sig == SIGHUP)
+      {
+         LOG_INFO_MESSAGE("Reloading logging configuration...");
+
+         Error error = reinitLog();
+         if (error)
+         {
+            LOG_ERROR(error);
+            LOG_ERROR_MESSAGE("Failed to reload logging configuration");
+         }
+         else
+         {
+            LOG_INFO_MESSAGE("Successfully reloaded logging configuration");
+         }
+      }
+   }
 }
 
-void initializeLog(const std::string& programIdentity,
-                   int logLevel,
-                   const FilePath& logDir)
+} // anonymous namespace
+
+void initializeLogConfigReload()
 {
-   if (s_pLogWriter)
-      delete s_pLogWriter;
+   // block the SIGHUP signal
+   sigset_t waitMask;
+   sigemptyset(&waitMask);
+   sigaddset(&waitMask, SIGHUP);
 
-   s_pLogWriter = new FileLogWriter(programIdentity, logLevel, logDir);
-}
+   int result = ::pthread_sigmask(SIG_BLOCK, &waitMask, NULL);
+   if (result != 0)
+      return;
 
-void setLogToStderr(bool logToStderr)
-{
-   if (s_pLogWriter)
-      s_pLogWriter->setLogToStderr(logToStderr);
-}
-
-void addLogWriter(boost::shared_ptr<core::LogWriter> pLogWriter)
-{
-   s_logWriters.push_back(pLogWriter);
-}
-
-void log(LogLevel logLevel, const std::string& message)
-{
-   if (s_pLogWriter)
-      s_pLogWriter->log(logLevel, message);
-
-   std::for_each(s_logWriters.begin(),
-                 s_logWriters.end(),
-                 boost::bind(&LogWriter::log, _1, logLevel, message));
+   // start a thread to handle the SIGHUP signal
+   boost::thread thread(boost::bind(logConfigReloadThreadFunc, waitMask));
 }
    
 Error ignoreTerminalSignals()
@@ -386,9 +402,7 @@ SignalBlocker::~SignalBlocker()
    
 Error clearSignalMask()
 {
-   sigset_t blockNoneMask;
-   sigemptyset(&blockNoneMask);
-   int result = ::pthread_sigmask(SIG_SETMASK, &blockNoneMask, NULL);
+   int result = signal_safe::clearSignalMask();
    if (result != 0)
       return systemError(result, ERROR_LOCATION);
    else
@@ -737,6 +751,7 @@ void closeFileDescriptorsFromParent(int pipeFd, uint32_t fdStart, rlim_t fdLimit
    // the parent must give us this list because we cannot fetch it ourselves
    // in a signal-safe way, but we can read from the pipe safely
    bool error = false;
+   bool fdsRead = false;
 
    int32_t buff;
    while (true)
@@ -762,6 +777,7 @@ void closeFileDescriptorsFromParent(int pipeFd, uint32_t fdStart, rlim_t fdLimit
          break; // indicates no more fds are open by the process
       }
 
+      fdsRead = true;
       uint32_t fd = static_cast<uint32_t>(buff);
 
       // close the reported fd if it is in range
@@ -770,8 +786,9 @@ void closeFileDescriptorsFromParent(int pipeFd, uint32_t fdStart, rlim_t fdLimit
    }
 
    // if no descriptors could be read from the parent for whatever reason,
+   // or there was an error reading from the pipe,
    // fall back to the slow close method detailed above
-   if (error)
+   if (error || !fdsRead)
    {
       closeFileDescriptorsFromSafe(fdStart, pipeFd);
       closeFileDescriptorsFromSafe(pipeFd + 1, fdLimit);
@@ -786,6 +803,13 @@ int permanentlyDropPriv(UidType newUid)
 int restoreRoot()
 {
    return ::setuid(0);
+}
+
+int clearSignalMask()
+{
+   sigset_t blockNoneMask;
+   sigemptyset(&blockNoneMask);
+   return ::pthread_sigmask(SIG_SETMASK, &blockNoneMask, NULL);
 }
 
 } // namespace signal_safe
@@ -2684,7 +2708,6 @@ Error restoreRoot()
 {
    return restorePrivImpl(0);
 }
-
 
 } // namespace system
 } // namespace core

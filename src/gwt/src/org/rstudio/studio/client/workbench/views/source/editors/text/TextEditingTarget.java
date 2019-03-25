@@ -136,6 +136,7 @@ import org.rstudio.studio.client.workbench.views.files.events.FileChangeHandler;
 import org.rstudio.studio.client.workbench.views.files.model.FileChange;
 import org.rstudio.studio.client.workbench.views.help.events.ShowHelpEvent;
 import org.rstudio.studio.client.workbench.views.jobs.events.JobRunScriptEvent;
+import org.rstudio.studio.client.workbench.views.jobs.events.LauncherJobRunScriptEvent;
 import org.rstudio.studio.client.workbench.views.output.compilepdf.events.CompilePdfEvent;
 import org.rstudio.studio.client.workbench.views.output.lint.LintManager;
 import org.rstudio.studio.client.workbench.views.presentation.events.SourceFileSaveCompletedEvent;
@@ -466,7 +467,7 @@ public class TextEditingTarget implements
                                          docDisplay_, 
                                          events_, 
                                          this);
-      
+
       docDisplay_.addKeyDownHandler(new KeyDownHandler()
       {
          public void onKeyDown(KeyDownEvent event)
@@ -816,12 +817,10 @@ public class TextEditingTarget implements
                   boolean enabled = e.getState() == 
                         DocTabDragStateChangedEvent.STATE_NONE;
                   
-                  // disable drag/drop if disabled in preferences
-                  if (enabled)
-                     enabled = prefs.enableTextDrag().getValue();
-                  
-                  // update editor surface
-                  docDisplay_.setDragEnabled(enabled);
+                  // make editor read only while we're dragging and dropping
+                  // tabs; otherwise the editor surface will accept a tab drop
+                  // as text
+                  docDisplay_.setReadOnly(!enabled);
                }
             });
       
@@ -1285,7 +1284,7 @@ public class TextEditingTarget implements
                                                           extendedType_, 
                                                           fileType_);
 
-      themeHelper_ = new TextEditingTargetThemeHelper(this, events_);
+      themeHelper_ = new TextEditingTargetThemeHelper(this, events_, releaseOnDismiss_);
       
       docUpdateSentinel_ = new DocUpdateSentinel(
             server_,
@@ -1533,14 +1532,12 @@ public class TextEditingTarget implements
       syncFontSize(releaseOnDismiss_, events_, view_, fontSizeManager_);
      
 
-      final String rTypeId = FileTypeRegistry.R.getTypeId();
       releaseOnDismiss_.add(prefs_.softWrapRFiles().addValueChangeHandler(
             new ValueChangeHandler<Boolean>()
             {
                public void onValueChange(ValueChangeEvent<Boolean> evt)
                {
-                  if (fileType_.getTypeId().equals(rTypeId))
-                     view_.adaptToFileType(fileType_);
+                  view_.adaptToFileType(fileType_);
                }
             }
       ));
@@ -1572,9 +1569,8 @@ public class TextEditingTarget implements
          }
       }));
       
-      spelling_ = new TextEditingTargetSpelling(docDisplay_, 
-                                                docUpdateSentinel_);
-      
+      spelling_ = new TextEditingTargetSpelling(docDisplay_, docUpdateSentinel_, lintManager_);
+
 
       // show/hide the debug toolbar when the dirty state changes. (note:
       // this doesn't yet handle the case where the user saves the document,
@@ -2151,12 +2147,23 @@ public class TextEditingTarget implements
    }
 
    @Override
-   public void verifySqlPrerequisites()
+   public void verifyNewSqlPrerequisites()
    {
-      verifySqlPrequisites(null);
+      verifyNewSqlPrerequisites(null);
+   }
+
+   private void verifyNewSqlPrerequisites(final Command command) 
+   {
+      dependencyManager_.withRSQLite("Previewing SQL scripts", new Command() {
+         @Override
+         public void execute() {
+            if (command != null)
+               command.execute();
+         }
+      });
    }
    
-   private void verifySqlPrequisites(final Command command) 
+   private void verifySqlPrerequisites(final Command command) 
    {
       dependencyManager_.withDBI("Previewing SQL scripts", new Command() {
          @Override
@@ -2441,9 +2448,14 @@ public class TextEditingTarget implements
          final String encodingOverride,
          final CommandWithArg<String> command)
    {
+      String preferredDocumentEncoding = null;
+      if (docDisplay_.getFileType().isRmd())
+         preferredDocumentEncoding = "UTF-8";
+      
       final String encoding = StringUtil.firstNotNullOrEmpty(new String[] {
             encodingOverride,
             docUpdateSentinel_.getEncoding(),
+            preferredDocumentEncoding,
             prefs_.defaultEncoding().getValue()
       });
 
@@ -2638,10 +2650,17 @@ public class TextEditingTarget implements
       boolean stripTrailingWhitespace = (projConfig_ == null)
             ? prefs_.stripTrailingWhitespace().getValue()
             : projConfig_.stripTrailingWhitespace();
+            
+      // override preference for certain files
+      boolean dontStripWhitespace =
+            fileType_.isMarkdown() ||
+            fileType_.isPython() ||
+            name_.getValue().equals("DESCRIPTION");
       
-      if (stripTrailingWhitespace &&
-          !fileType_.isMarkdown() &&
-          !name_.getValue().equals("DESCRIPTION"))
+      if (dontStripWhitespace)
+         stripTrailingWhitespace = false;
+      
+      if (stripTrailingWhitespace)
       {
          String code = docDisplay_.getCode();
          Pattern pattern = Pattern.create("[ \t]+$");
@@ -4171,6 +4190,18 @@ public class TextEditingTarget implements
    }
    
    @Handler
+   void onRunSelectionAsJob()
+   {
+      codeExecution_.runSelectionAsJob(false /*useLauncher*/);
+   }
+   
+   @Handler
+   void onRunSelectionAsLauncherJob()
+   {
+      codeExecution_.runSelectionAsJob(true /*useLauncher*/);
+   }
+   
+   @Handler
    void onExecuteCurrentLine()
    {
       codeExecution_.executeBehavior(UIPrefsAccessor.EXECUTE_LINE);
@@ -5089,6 +5120,15 @@ public class TextEditingTarget implements
    }
    
    @Handler
+   public void onSourceAsLauncherJob()
+   {
+      saveThenExecute(null, () ->
+      {
+         events_.fireEvent(new LauncherJobRunScriptEvent(getPath()));
+      });
+   }
+   
+   @Handler
    void onProfileCode()
    {
       dependencyManager_.withProfvis("The profiler", new Command()
@@ -5425,7 +5465,7 @@ public class TextEditingTarget implements
 
    void previewSql()
    {
-      verifySqlPrequisites(new Command() {
+      verifySqlPrerequisites(new Command() {
          @Override
          public void execute()
          {
@@ -7242,7 +7282,9 @@ public class TextEditingTarget implements
          }
       });
    }
-   
+
+   public TextEditingTargetSpelling getSpellingTarget() { return this.spelling_; }
+
    private StatusBar statusBar_;
    private final DocDisplay docDisplay_;
    private final UIPrefs prefs_;

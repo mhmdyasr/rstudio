@@ -154,11 +154,15 @@ assign(x = ".rs.acCompletionTypes",
    tags <- c(
       "@aliases ",
       "@author ",
-      "@concepts ",
+      "@backref ",
+      "@concept ",
       "@describeIn ",
       "@description ",
       "@details ",
       "@docType ",
+      "@encoding ",
+      "@eval ",
+      "@evalNamespace ",
       "@evalRd ",
       "@example ",
       "@examples ",
@@ -185,8 +189,8 @@ assign(x = ".rs.acCompletionTypes",
       "@noMd",
       "@noRd",
       "@param ",
-      "@rawRd ",
       "@rawNamespace ",
+      "@rawRd ",
       "@rdname ",
       "@references ",
       "@return ",
@@ -1846,7 +1850,7 @@ assign(x = ".rs.acCompletionTypes",
    # If the R console is requesting completions, but the Python REPL is
    # active, then delegate to that machinery.
    if (isConsole && .rs.reticulate.replIsActive())
-      return(.rs.rpc.python_get_completions(line))
+      return(.rs.rpc.python_get_completions(line, NULL))
    
    # Inject 'params' into the global env to provide for completions in
    # parameterized R Markdown documents
@@ -2100,21 +2104,20 @@ assign(x = ".rs.acCompletionTypes",
       # NOTE: For Markdown link completions, we overload the meaning of the
       # function call string here, and use it as a signal to generate paths
       # relative to the R markdown path.
-      isMarkdownLink <- identical(functionCallString, "useFile")
       isRmd <- .rs.endsWith(tolower(filePath), ".rmd")
       
       path <- NULL
       
-      if (!isMarkdownLink && isRmd) 
+      # if in an Rmd file, ask it for its desired working dir (can be changed
+      # with the knitr root.dir option)
+      if (isRmd)
       {
-         # if in an Rmd file, ask it for its desired working dir (can be changed
-         # with the knitr root.dir option)
          path <- .Call("rs_getRmdWorkingDir", filePath, documentId)
       }
 
-      if (is.null(path) && (isMarkdownLink || isRmd)) 
+      if (is.null(path) && isRmd)
       {
-         # for links, or R Markdown without an explicit working dir, use the
+         # for R Markdown documents without an explicit working dir, use the
          # base directory of the file
          path <- suppressWarnings(.rs.normalizePath(dirname(filePath)))
       }
@@ -2944,7 +2947,7 @@ assign(x = ".rs.acCompletionTypes",
    if (is.call(object))
    {
       operator <- as.character(object[[1]])
-      if (operator == "$" || operator == "[[")
+      if (length(object) == 3 && (operator == "$" || operator == "[["))
       {
          name <- if (is.symbol(object[[2]]))
             as.character(object[[2]])
@@ -2968,6 +2971,7 @@ assign(x = ".rs.acCompletionTypes",
       }
       
       if (length(object) > 1)
+      {
          for (j in 2:length(object))
          {
             if (is.call(object[[j]]))
@@ -2979,6 +2983,7 @@ assign(x = ".rs.acCompletionTypes",
                                             outputCount)
             }
          }
+      }
    }
    
 })

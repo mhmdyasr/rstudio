@@ -1,7 +1,7 @@
 /*
  * SessionConsoleProcessInfo.cpp
  *
- * Copyright (C) 2009-17 by RStudio, Inc.
+ * Copyright (C) 2009-18 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -18,8 +18,16 @@
 #include <core/system/System.hpp>
 #include <core/text/TermBufferParser.hpp>
 
+#include "session-config.h"
+
+#ifdef RSTUDIO_SERVER
+#include <server_core/UrlPorts.hpp>
+#endif
+
 #include <session/SessionConsoleProcessPersist.hpp>
 #include <session/SessionModuleContext.hpp>
+#include <session/SessionPersistentState.hpp>
+#include <session/SessionOptions.hpp>
 
 using namespace rstudio::core;
 
@@ -180,7 +188,7 @@ void ConsoleProcessInfo::deleteEnvFile() const
    console_persist::deleteEnvFile(handle_);
 }
 
-core::json::Object ConsoleProcessInfo::toJson() const
+core::json::Object ConsoleProcessInfo::toJson(SerializationMode serialMode) const
 {
    json::Object result;
    result["handle"] = handle_;
@@ -211,87 +219,133 @@ core::json::Object ConsoleProcessInfo::toJson() const
    result["zombie"] = zombie_;
    result["track_env"] = trackEnv_;
 
+
+#ifdef RSTUDIO_SERVER
+   // in server mode, we may need to provide the client with an obscured form of the port when
+   // connecting via websockets
+   if (options().programMode() == kSessionProgramModeServer &&
+       serialMode == ClientSerialization &&
+       channelMode_ == Websocket)
+   {
+      auto port = safe_convert::stringTo<int>(channelId_);
+      if (port)
+      {
+         result["channel_id"] = server_core::transformPort(persistentState().portToken(), *port);
+      }
+   }
+#endif
    return result;
 }
 
-boost::shared_ptr<ConsoleProcessInfo> ConsoleProcessInfo::fromJson(core::json::Object& obj)
+boost::shared_ptr<ConsoleProcessInfo> ConsoleProcessInfo::fromJson(const core::json::Object& obj)
 {
    boost::shared_ptr<ConsoleProcessInfo> pProc(new ConsoleProcessInfo());
 
-   json::Value handle = obj["handle"];
-   if (!handle.is_null())
-      pProc->handle_ = handle.get_str();
-   json::Value caption = obj["caption"];
-   if (!caption.is_null())
-      pProc->caption_ = caption.get_str();
+   Error error = json::getOptionalParam(obj, "handle", std::string(), &pProc->handle_);
+   if (error)
+      LOG_ERROR(error);
 
-   json::Value showOnOutput = obj["show_on_output"];
-   if (!showOnOutput.is_null())
-      pProc->showOnOutput_ = showOnOutput.get_bool();
-   else
-      pProc->showOnOutput_ = false;
+   error = json::getOptionalParam(obj, "caption", std::string(), &pProc->caption_);
+   if (error)
+      LOG_ERROR(error);
 
-   json::Value mode = obj["interaction_mode"];
-   if (!mode.is_null())
-      pProc->interactionMode_ = static_cast<InteractionMode>(mode.get_int());
-   else
-      pProc->interactionMode_ = InteractionNever;
+   error = json::getOptionalParam(obj, "show_on_output", false, &pProc->showOnOutput_);
+   if (error)
+      LOG_ERROR(error);
 
-   json::Value maxLines = obj["max_output_lines"];
-   if (!maxLines.is_null())
-      pProc->maxOutputLines_ = maxLines.get_int();
-   else
-      pProc->maxOutputLines_ = kDefaultMaxOutputLines;
+   int mode = 0;
+   error = json::getOptionalParam(obj, "interaction_mode", 0, &mode);
+   if (error)
+      LOG_ERROR(error);
+   pProc->interactionMode_ = static_cast<InteractionMode>(mode);
 
-   json::Value bufferedOutputValue = obj["buffered_output"];
-   if (!bufferedOutputValue.is_null())
+   error = json::getOptionalParam(obj, "max_output_lines", kDefaultMaxOutputLines, &pProc->maxOutputLines_);
+   if (error)
+      LOG_ERROR(error);
+
+   std::string bufferedOutput;
+   error = json::getOptionalParam(obj, "buffered_output", std::string(), &bufferedOutput);
+   if (error)
+      LOG_ERROR(error);
+   if (!bufferedOutput.empty())
    {
-      std::string bufferedOutput = bufferedOutputValue.get_str();
       std::copy(bufferedOutput.begin(), bufferedOutput.end(),
                 std::back_inserter(pProc->outputBuffer_));
    }
-   json::Value exitCode = obj["exit_code"];
-   if (exitCode.is_null())
-      pProc->exitCode_.reset();
-   else
-      pProc->exitCode_.reset(exitCode.get_int());
 
-   pProc->terminalSequence_ = obj["terminal_sequence"].get_int();
-   pProc->allowRestart_ = obj["allow_restart"].get_bool();
+   error = json::getOptionalParam(obj, "exit_code", &pProc->exitCode_);
+   if (error)
+      LOG_ERROR(error);
 
-   json::Value title = obj["title"];
-   if (!title.is_null())
-      pProc->title_ = title.get_str();
+   error = json::getOptionalParam(obj, "terminal_sequence", 0, &pProc->terminalSequence_);
+   if (error)
+      LOG_ERROR(error);
 
-   pProc->childProcs_ = obj["child_procs"].get_bool();
-   int shellTypeInt = obj["shell_type"].get_int();
+   error = json::getOptionalParam(obj, "allow_restart", false, &pProc->allowRestart_);
+   if (error)
+      LOG_ERROR(error);
+
+   error = json::getOptionalParam(obj, "title", std::string(), &pProc->title_);
+   if (error)
+      LOG_ERROR(error);
+
+   error = json::getOptionalParam(obj, "child_procs", false, &pProc->childProcs_);
+   if (error)
+      LOG_ERROR(error);
+
+   int shellTypeInt = 0;
+   error = json::getOptionalParam(obj, "shell_type", 0, &shellTypeInt);
+   if (error)
+      LOG_ERROR(error);
    pProc->shellType_ =
       static_cast<TerminalShell::TerminalShellType>(shellTypeInt);
-   int channelModeInt = obj["channel_mode"].get_int();
+
+   int channelModeInt = 0;
+   error = json::getOptionalParam(obj, "channel_mode", 0, &channelModeInt);
+   if (error)
+      LOG_ERROR(error);
    pProc->channelMode_ = static_cast<ChannelMode>(channelModeInt);
 
-   json::Value channelId = obj["channel_id"];
-   if (!channelId.is_null())
-      pProc->channelId_ = channelId.get_str();
+   error = json::getOptionalParam(obj, "channel_id", std::string(), &pProc->channelId_);
+   if (error)
+      LOG_ERROR(error);
 
-   pProc->altBufferActive_ = obj["alt_buffer"].get_bool();
+   error = json::getOptionalParam(obj, "alt_buffer", false, &pProc->altBufferActive_);
+   if (error)
+      LOG_ERROR(error);
 
-   json::Value cwdValue = obj["cwd"];
-   if (!cwdValue.is_null())
-   {
-      std::string cwd = cwdValue.get_str();
-      if (!cwd.empty())
-         pProc->cwd_ = module_context::resolveAliasedPath(obj["cwd"].get_str());
-   }
+   std::string cwd;
+   error = json::getOptionalParam(obj, "cwd", std::string(), &cwd);
+   if (error)
+      LOG_ERROR(error);
+   if (!cwd.empty())
+      pProc->cwd_ = module_context::resolveAliasedPath(cwd);
 
-   pProc->cols_ = obj["cols"].get_int();
-   pProc->rows_ = obj["rows"].get_int();
+   error = json::getOptionalParam(obj, "cols", 0, &pProc->cols_);
+   if (error)
+      LOG_ERROR(error);
 
-   pProc->restarted_ = obj["restarted"].get_bool();
-   int autoCloseInt = obj["autoclose"].get_int();
+   error = json::getOptionalParam(obj, "rows", 0, &pProc->rows_);
+   if (error)
+      LOG_ERROR(error);
+
+   error = json::getOptionalParam(obj, "restarted", false, &pProc->restarted_);
+   if (error)
+      LOG_ERROR(error);
+
+   int autoCloseInt = 0;
+   error = json::getOptionalParam(obj, "autoclose", 0, &autoCloseInt);
+   if (error)
+      LOG_ERROR(error);
    pProc->autoClose_ = static_cast<AutoCloseMode>(autoCloseInt);
-   pProc->zombie_ = obj["zombie"].get_bool();
-   pProc->trackEnv_ = obj["track_env"].get_bool();
+
+   error = json::getOptionalParam(obj, "zombie", false, &pProc->zombie_);
+   if (error)
+      LOG_ERROR(error);
+
+   error = json::getOptionalParam(obj, "track_env", false, &pProc->trackEnv_);
+   if (error)
+      LOG_ERROR(error);
 
    return pProc;
 }

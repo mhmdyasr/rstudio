@@ -124,15 +124,15 @@ void onClientInit()
 Error extractFilePaths(const json::Array& files, 
                        std::vector<FilePath>* pFilePaths)
 {   
-   for(json::Array::const_iterator 
+   for(json::Array::iterator
          it = files.begin(); 
          it != files.end();
          ++it)
    {
-      if (it->type() != json::StringType)
+      if ((*it).type() != json::StringType)
          return Error(json::errc::ParamTypeMismatch, ERROR_LOCATION);
 
-      std::string file = it->get_str() ;
+      std::string file = (*it).get_str() ;
       pFilePaths->push_back(module_context::resolveAliasedPath(file)) ;
    }
 
@@ -735,14 +735,14 @@ void setAttachmentResponse(const http::Request& request,
       pResponse->setHeader("Expires", "Fri, 01 Jan 1990 00:00:00 GMT");
       pResponse->setHeader("Cache-Control", "private");
    }
+
    // Can't rely on "filename*" in Content-Disposition header because not all
    // browsers support non-ASCII characters here (e.g. Safari 5.0.5). If
    // possible, make the requesting URL contain the UTF-8 byte escaped filename
    // as the last path element.
    pResponse->setHeader("Content-Disposition",
                         "attachment; filename*=UTF-8''"
-                        + http::util::urlEncode(filename, false));
-   pResponse->setHeader("Content-Type", "application/octet-stream");
+                           + http::util::urlEncode(filename, false));
    pResponse->setStreamFile(attachmentPath, request);
 }
    

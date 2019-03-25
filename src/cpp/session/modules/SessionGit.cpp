@@ -1004,7 +1004,7 @@ public:
       std::string remote, merge;
       if (remoteMerge(branch, &remote, &merge))
       {
-         args << remote << merge;
+         args << remote << ("HEAD:" + merge);
       }
 
       return createConsoleProc(args, "Git Push", ppCP);
@@ -1491,12 +1491,12 @@ std::vector<FilePath> resolveAliasedPaths(const json::Array& paths,
                                           bool includeRenameNew = true)
 {
    std::vector<FilePath> results;
-   for (json::Array::const_iterator it = paths.begin();
+   for (json::Array::iterator it = paths.begin();
         it != paths.end();
         it++)
    {
       std::string oldPath, newPath;
-      if (splitRename(it->get_str(), &oldPath, &newPath))
+      if (splitRename((*it).get_str(), &oldPath, &newPath))
       {
          if (includeRenameOld)
             results.push_back(resolveAliasedPath(oldPath));
@@ -1505,7 +1505,7 @@ std::vector<FilePath> resolveAliasedPaths(const json::Array& paths,
       }
       else
       {
-         results.push_back(resolveAliasedPath(it->get_str()));
+         results.push_back(resolveAliasedPath((*it).get_str()));
       }
    }
    return results;
@@ -1708,7 +1708,7 @@ Error vcsCreateBranch(const json::JsonRpcRequest& request,
    if (error)
       return error;
    
-   pResponse->setResult(pCP->toJson());
+   pResponse->setResult(pCP->toJson(console_process::ClientSerialization));
 
    return Success();
 }
@@ -1752,7 +1752,7 @@ Error vcsCheckout(const json::JsonRpcRequest& request,
    if (error)
       return error;
 
-   pResponse->setResult(pCP->toJson());
+   pResponse->setResult(pCP->toJson(console_process::ClientSerialization));
 
    return Success();
 }
@@ -1770,7 +1770,7 @@ Error vcsCheckoutRemote(const json::JsonRpcRequest& request,
    if (error)
       return error;
    
-   pResponse->setResult(pCP->toJson());
+   pResponse->setResult(pCP->toJson(console_process::ClientSerialization));
    
    return Success();
 }
@@ -1853,7 +1853,7 @@ Error vcsCommit(const json::JsonRpcRequest& request,
       return error;
    }
 
-   pResponse->setResult(pCP->toJson());
+   pResponse->setResult(pCP->toJson(console_process::ClientSerialization));
 
    return Success();
 }
@@ -1868,7 +1868,7 @@ Error vcsPush(const json::JsonRpcRequest& request,
 
    ask_pass::setActiveWindow(request.sourceWindow);
 
-   pResponse->setResult(pCP->toJson());
+   pResponse->setResult(pCP->toJson(console_process::ClientSerialization));
 
    return Success();
 }
@@ -1888,7 +1888,7 @@ Error vcsPushBranch(const json::JsonRpcRequest& request,
 
    ask_pass::setActiveWindow(request.sourceWindow);
 
-   pResponse->setResult(pCP->toJson());
+   pResponse->setResult(pCP->toJson(console_process::ClientSerialization));
 
    return Success();
 }
@@ -1903,7 +1903,7 @@ Error vcsPull(const json::JsonRpcRequest& request,
 
    ask_pass::setActiveWindow(request.sourceWindow);
 
-   pResponse->setResult(pCP->toJson());
+   pResponse->setResult(pCP->toJson(console_process::ClientSerialization));
 
    return Success();
 }
@@ -1918,7 +1918,7 @@ Error vcsPullRebase(const json::JsonRpcRequest& request,
 
    ask_pass::setActiveWindow(request.sourceWindow);
 
-   pResponse->setResult(pCP->toJson());
+   pResponse->setResult(pCP->toJson(console_process::ClientSerialization));
 
    return Success();
 }

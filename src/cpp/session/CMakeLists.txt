@@ -90,6 +90,7 @@ set (SESSION_SOURCE_FILES
    SessionSourceDatabaseSupervisor.cpp
    SessionSuspend.cpp
    SessionUriHandlers.cpp
+   SessionUrlPorts.cpp
    SessionUserSettings.cpp
    SessionWorkerContext.cpp
    http/SessionHttpConnectionQueue.cpp
@@ -361,7 +362,7 @@ if(WIN32)
 endif()
 
 # define executable
-add_executable(rsession ${SESSION_SOURCE_FILES} ${SESSION_HEADER_FILES})
+add_stripped_executable(rsession ${SESSION_SOURCE_FILES} ${SESSION_HEADER_FILES})
 
 # skip libR RPATH at development time
 if(RSTUDIO_DEVELOPMENT OR RSTUDIO_RUN_IN_PLACE)
@@ -398,6 +399,7 @@ target_link_libraries(rsession
    ${SESSION_SYSTEM_LIBRARIES}
    ${CMAKE_DL_LIBS}
    ${LIBR_LIBRARIES}
+   ${CRASHPAD_LIBRARIES}
 )
 
 if (RSTUDIO_SERVER)
@@ -479,7 +481,13 @@ install(DIRECTORY "resources/connections"
         DESTINATION ${RSTUDIO_INSTALL_SUPPORTING}/resources)
 
 # install pandoc
-set(PANDOC_BIN "${RSTUDIO_DEPENDENCIES_DIR}/common/pandoc/2.3.1")
+if(WIN32)
+   set(PANDOC_VERSION "2.6" CACHE INTERNAL "Pandoc version")
+else()
+   set(PANDOC_VERSION "2.3.1" CACHE INTERNAL "Pandoc version")
+endif()
+
+set(PANDOC_BIN "${RSTUDIO_DEPENDENCIES_DIR}/common/pandoc/${PANDOC_VERSION}")
 file(GLOB PANDOC_FILES "${PANDOC_BIN}/pandoc*")
 install(FILES ${PANDOC_FILES}
         PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE

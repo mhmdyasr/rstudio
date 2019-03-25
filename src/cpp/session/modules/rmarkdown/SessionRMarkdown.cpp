@@ -47,6 +47,7 @@
 #include <session/SessionConsoleProcess.hpp>
 #include <session/SessionAsyncRProcess.hpp>
 #include <session/SessionUserSettings.hpp>
+#include <session/SessionUrlPorts.hpp>
 
 #include <session/projects/SessionProjects.hpp>
 
@@ -69,6 +70,62 @@ namespace rstudio {
 namespace session {
 
 namespace {
+
+#ifdef _WIN32
+
+// TODO: promote to StringUtils?
+std::string utf8ToConsole(const std::string& string)
+{
+   std::vector<wchar_t> wide(string.length() + 1);
+   int chars = ::MultiByteToWideChar(
+            CP_UTF8, 0,
+            string.data(), string.size(),
+            &wide[0], static_cast<int>(wide.size()));
+
+   if (chars == 0)
+   {
+      LOG_ERROR(LAST_SYSTEM_ERROR());
+      return string;
+   }
+   
+   std::ostringstream output;
+   char buffer[16];
+   
+   // force C locale (ensures that any non-ASCII characters
+   // will fail to convert and hence must be unicode escaped)
+   const char* locale = ::setlocale(LC_CTYPE, nullptr);
+   ::setlocale(LC_CTYPE, "C");
+
+   for (int i = 0; i < chars; i++)
+   {
+      int n = ::wctomb(buffer, wide[i]);
+      
+      // use Unicode escaping for characters that cannot be represented
+      // as well as for single-byte upper ASCII
+      if (n == -1 || (n == 1 && static_cast<unsigned char>(buffer[0]) > 127))
+      {
+         output << "\\u{" << std::hex << wide[i] << "}";
+      }
+      else
+      {
+         output.write(buffer, n);
+      }
+   }
+   
+   ::setlocale(LC_CTYPE, locale);
+   
+   return output.str();
+   
+}
+
+#else
+
+std::string utf8ToConsole(const std::string& string)
+{
+   return string_utils::utf8ToSystem(string);
+}
+
+#endif
 
 enum 
 {
@@ -202,7 +259,14 @@ std::string assignOutputUrl(const std::string& outputFile)
          websiteDir = FilePath(websiteOutputDir);
       }
    }
-   if (!websiteDir.empty() && outputPath.isWithin(websiteDir) && !r_util::isWebsiteDirectory(outputPath.parent()))
+
+   // figure out the project directory
+   FilePath projDir = outputPath.parent();
+   if (projDir.filename() == "_site")
+      projDir = projDir.parent();
+
+   // detect whether we're creating a book output vs. a website page
+   if (!websiteDir.empty() && outputPath.isWithin(websiteDir) && !r_util::isWebsiteDirectory(projDir))
    {
       // if we're creating a '.pdf', detect the created book appropriately
       FilePath indexPath;
@@ -392,7 +456,7 @@ private:
 
       std::string extraParams;
       std::string targetFile =
-              string_utils::utf8ToSystem(targetFile_.absolutePath());
+            utf8ToConsole(targetFile_.absolutePath());
 
       std::string renderOptions("encoding = '" + encoding + "'");
 
@@ -405,7 +469,7 @@ private:
       // include params if specified
       if (!paramsFile.empty())
       {
-         renderOptions += ", params = readRDS('" + paramsFile + "')";
+         renderOptions += ", params = readRDS('" + utf8ToConsole(paramsFile) + "')";
       }
 
       // use the stated working directory if specified and we're using the default render function
@@ -413,7 +477,7 @@ private:
       if (!workingDir.empty() && renderFunc == kStandardRenderFunc)
       {
          renderOptions += ", knit_root_dir = '" + 
-                          string_utils::utf8ToSystem(workingDir) + "'";
+                          utf8ToConsole(workingDir) + "'";
       }
 
       // output to a temporary directory if specified (no need to do this
@@ -424,7 +488,7 @@ private:
          Error error = tmpDir.ensureDirectory();
          if (!error)
          {
-            std::string dir = string_utils::utf8ToSystem(tmpDir.absolutePath());
+            std::string dir = utf8ToConsole(tmpDir.absolutePath());
             renderOptions += ", output_dir = '" + dir + "'";
          }
          else
@@ -437,8 +501,8 @@ private:
       {
          extraParams += "shiny_args = list(launch.browser = FALSE), "
                         "auto_reload = FALSE, ";
-         extraParams += "dir = '" + string_utils::utf8ToSystem(
-                     targetFile_.parent().absolutePath()) + "', ";
+         std::string parentDir = utf8ToConsole(targetFile_.parent().absolutePath());
+         extraParams += "dir = '" + parentDir + "', ";
 
          // provide render_args in render_args parameter
          renderOptions = "render_args = list(" + renderOptions + ")";
@@ -451,7 +515,12 @@ private:
                              string_utils::singleQuotedStrEscape(targetFile) %
                              extraParams %
                              renderOptions);
-
+      
+      // un-escape unicode escapes
+#ifdef _WIN32
+      cmd = boost::algorithm::replace_all_copy(cmd, "\\\\u{", "\\u{");
+#endif
+      
       // environment
       core::system::Options environment;
       std::string tempDir;
@@ -541,7 +610,7 @@ private:
                startedJson["target_file"] =
                      module_context::createAliasedPath(targetFile_);
                startedJson["output_format"] = outputFormat_;
-               std::string url(module_context::mapUrlPorts(matches[1].str()));
+               std::string url(url_ports::mapUrlPorts(matches[1].str()));
 
                // add a / to the URL if it doesn't have one already
                // (typically portmapped URLs do, but the raw URL returned by
@@ -678,12 +747,13 @@ private:
           && !module_context::isPdfLatexInstalled())
       {
          enqueRenderOutput(module_context::kCompileOutputError,
-            "\nNo TeX installation detected (TeX is required "
+            "\nNo LaTeX installation detected (LaTeX is required "
             "to create PDF output). You should install "
-            "a recommended TeX distribution for your platform:\n\n"
-            "  Windows: MiKTeX (Complete) - http://miktex.org/2.9/setup\n"
-            "  (NOTE: Be sure to download the Complete rather than Basic installation)\n\n"
-            "  Mac OS X: TexLive 2013 (Full) - http://tug.org/mactex/\n"
+            "a LaTeX distribution for your platform: "
+            "https://www.latex-project.org/get/\n\n"
+            "  If you are not sure, you may install TinyTeX in R: tinytex::install_tinytex()\n\n"
+            "  Otherwise consider MiKTeX on Windows - http://miktex.org\n\n"
+            "  MacTeX on macOS - https://tug.org/mactex/\n"
             "  (NOTE: Download with Safari rather than Chrome _strongly_ recommended)\n\n"
             "  Linux: Use system package manager\n\n");
       }

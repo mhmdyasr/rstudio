@@ -1,7 +1,7 @@
 /*
  * JobLauncherDialog.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -15,6 +15,7 @@
 package org.rstudio.studio.client.workbench.views.jobs.view;
 
 import org.rstudio.core.client.StringUtil;
+import org.rstudio.core.client.files.FileSystemItem;
 import org.rstudio.core.client.widget.ModalDialog;
 import org.rstudio.core.client.widget.OperationWithInput;
 import org.rstudio.studio.client.workbench.views.jobs.model.JobLaunchSpec;
@@ -23,15 +24,42 @@ import com.google.gwt.user.client.ui.Widget;
 
 public class JobLauncherDialog extends ModalDialog<JobLaunchSpec>
 {
-   public JobLauncherDialog(String caption, 
-                            String scriptPath,
+   public enum JobSource
+   {
+      Script,
+      Selection
+   }
+
+   public JobLauncherDialog(String caption,
+                            JobSource source,
+                            FileSystemItem scriptPath,
+                            OperationWithInput<JobLaunchSpec> operation)
+   {
+      this(caption, source, scriptPath, scriptPath.getParentPath(), null, operation);
+   }
+   
+   public JobLauncherDialog(String caption,
+                            JobSource source,
+                            FileSystemItem scriptPath,
+                            FileSystemItem workingDir,
+                            String code,
                             OperationWithInput<JobLaunchSpec> operation)
    {
       super(caption, operation);
 
       controls_ = new JobLauncherControls();
+
       if (scriptPath != null)
          controls_.setScriptPath(scriptPath);
+
+      if (workingDir != null)
+         controls_.setWorkingDir(workingDir);
+
+      if (code != null)
+         controls_.hideScript();
+      
+      code_ = code;
+      source_ = source;
 
       setOkButtonCaption("Start");
    }
@@ -39,17 +67,42 @@ public class JobLauncherDialog extends ModalDialog<JobLaunchSpec>
    @Override
    protected JobLaunchSpec collectInput()
    {
-      return JobLaunchSpec.create(controls_.scriptPath(), 
-            "unknown", // encoding unknown (will try to look it up later)
-            controls_.workingDir(),
-            controls_.importEnv(),
-            controls_.exportEnv());
+      // Compute a reasonable name for the job based on the selected script (if any)
+      String jobName;
+      if (source_ == JobSource.Selection)
+      {
+         jobName = computeSelectionJobName(controls_.scriptPath());
+      }
+      else 
+      {
+         jobName = FileSystemItem.getNameFromPath(controls_.scriptPath());
+      }
+
+      if (code_ == null)
+      {
+         return JobLaunchSpec.create(jobName,
+               controls_.scriptPath(), 
+               "unknown", // encoding unknown (will try to look it up later)
+               controls_.workingDir(),
+               controls_.importEnv(),
+               controls_.exportEnv());
+      }
+      else
+      {
+         return JobLaunchSpec.create(jobName,
+               code_, 
+               controls_.workingDir(), 
+               controls_.importEnv(), 
+               controls_.exportEnv());
+      }
    }
    
    @Override
    protected boolean validate(JobLaunchSpec spec)
    {
-      return !StringUtil.isNullOrEmpty(spec.path());
+      // we need either a path to a script to run or a code snippet
+      return !StringUtil.isNullOrEmpty(spec.path()) || 
+             !StringUtil.isNullOrEmpty(code_);
    }
 
    @Override
@@ -58,5 +111,19 @@ public class JobLauncherDialog extends ModalDialog<JobLaunchSpec>
       return controls_;
    }
    
+   public static String computeSelectionJobName(String path)
+   {
+      if (StringUtil.isNullOrEmpty(path))
+      {
+         return "Current selection";
+      }
+      else
+      {
+         return FileSystemItem.getNameFromPath(path) + " selection";
+      }
+   }
+   
+   private final String code_;
+   private final JobSource source_;
    private JobLauncherControls controls_;
 }

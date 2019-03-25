@@ -1,7 +1,7 @@
 /*
  * SessionClientInit.hpp
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -40,6 +40,7 @@
 #include "modules/jobs/SessionJobs.hpp"
 #include "modules/environment/SessionEnvironment.hpp"
 #include "modules/presentation/SessionPresentation.hpp"
+#include "modules/overlay/SessionOverlay.hpp"
 
 #include <r/session/RSession.hpp>
 #include <r/session/RClientState.hpp>
@@ -47,10 +48,12 @@
 #include <r/session/RConsoleHistory.hpp>
 #include <r/ROptions.hpp>
 
+#include <core/CrashHandler.hpp>
 #include <core/json/Json.hpp>
 #include <core/json/JsonRpc.hpp>
 #include <core/http/Request.hpp>
 #include <core/http/Response.hpp>
+#include <core/http/Cookie.hpp>
 #include <core/system/Environment.hpp>
 
 #include <session/SessionConsoleProcess.hpp>
@@ -67,6 +70,10 @@
 
 #include "session-config.h"
 
+#ifdef RSTUDIO_SERVER
+#include <server_core/UrlPorts.hpp>
+#endif
+
 using namespace rstudio::core;
 
 extern "C" const char *locale2charset(const char *);
@@ -74,6 +81,54 @@ extern "C" const char *locale2charset(const char *);
 namespace rstudio {
 namespace session {
 namespace client_init {
+namespace {
+
+#ifdef RSTUDIO_SERVER
+Error makePortTokenCookie(boost::shared_ptr<HttpConnection> ptrConnection, 
+      boost::shared_ptr<http::Cookie>* pCookie)
+{
+   // extract the base URL
+   json::JsonRpcRequest request;
+   Error error = parseJsonRpcRequest(ptrConnection->request().body(), &request);
+   if (error)
+      return error;
+   std::string baseURL;
+
+   error = json::readParams(request.params, &baseURL);
+   if (error)
+      return error;
+
+   // save the base URL to persistent state (for forming absolute URLs)
+   persistentState().setActiveClientUrl(baseURL);
+
+   // generate a new port token
+   persistentState().setPortToken(server_core::generateNewPortToken());
+
+   // compute the cookie path; find the first / after the http(s):// preamble. we make the cookie
+   // specific to this session's URL since it's possible for different sessions (paths) to use
+   // different tokens on the same server.
+   std::size_t pos = baseURL.find('/', 9);
+   std::string path = "/";
+   if (pos != std::string::npos)
+   {
+      path = baseURL.substr(pos);
+   }
+
+   // create the cookie; don't set an expiry date as this will be a session cookie
+   *pCookie = boost::make_shared<http::Cookie>(
+            ptrConnection->request(), 
+            kPortTokenCookie, 
+            persistentState().portToken(), 
+            path,  
+            true, // HTTP only -- client doesn't get to read this token
+            baseURL.substr(0, 5) == "https" // secure if using HTTPS
+         );
+
+   return Success();
+}
+#endif
+
+} // anonymous namespace
 
 void handleClientInit(const boost::function<void()>& initFunction,
                       boost::shared_ptr<HttpConnection> ptrConnection)
@@ -110,6 +165,12 @@ void handleClientInit(const boost::function<void()>& initFunction,
    json::Object sessionInfo ;
    sessionInfo["clientId"] = clientId;
    sessionInfo["mode"] = options.programMode();
+
+   // build initialization options for client
+   json::Object initOptions;
+   initOptions["restore_workspace"] = options.rRestoreWorkspace();
+   initOptions["run_rprofile"] = options.rRunRprofile();
+   sessionInfo["init_options"] = initOptions;
    
    sessionInfo["userIdentity"] = options.userIdentity();
 
@@ -261,7 +322,7 @@ void handleClientInit(const boost::function<void()>& initFunction,
    sessionInfo["lists"] = modules::lists::allListsAsJson();
 
    sessionInfo["console_processes"] =
-         console_process::processesAsJson();
+         console_process::processesAsJson(console_process::ClientSerialization);
 
    // send sumatra pdf exe path if we are on windows
 #ifdef _WIN32
@@ -422,14 +483,52 @@ void handleClientInit(const boost::function<void()>& initFunction,
 
    sessionInfo["job_state"] = modules::jobs::jobState();
 
+   sessionInfo["launcher_jobs_enabled"] = modules::overlay::launcherJobsFeatureDisplayed();
+
+   // crash handler settings
+   bool canModifyCrashSettings =
+         options.programMode() == kSessionProgramModeDesktop &&
+         crash_handler::configSource() == crash_handler::ConfigSource::User;
+   sessionInfo["crash_handler_settings_modifiable"] = canModifyCrashSettings;
+
+   sessionInfo["project_id"] = session::options().sessionScope().project();
+
+   if (session::options().getBoolOverlayOption(kSessionUserLicenseSoftLimitReached))
+   {
+      sessionInfo["license_message"] =
+            "There are more concurrent users of RStudio Server Pro than your license supports. "
+            "Please obtain an updated license to continue using the product.";
+   }
+
    module_context::events().onSessionInfo(&sessionInfo);
 
-   // send response  (we always set kEventsPending to false so that the client
+   // create response  (we always set kEventsPending to false so that the client
    // won't poll for events until it is ready)
-   json::JsonRpcResponse jsonRpcResponse ;
+   json::JsonRpcResponse jsonRpcResponse;
    jsonRpcResponse.setField(kEventsPending, "false");
-   jsonRpcResponse.setResult(sessionInfo) ;
-   ptrConnection->sendJsonRpcResponse(jsonRpcResponse);
+   jsonRpcResponse.setResult(sessionInfo);
+
+   // set response
+   core::http::Response response;
+   core::json::setJsonRpcResponse(jsonRpcResponse, &response);
+
+#ifdef RSTUDIO_SERVER
+   if (options.programMode() == kSessionProgramModeServer)
+   {
+      boost::shared_ptr<http::Cookie> pCookie;
+      Error error = makePortTokenCookie(ptrConnection, &pCookie);
+      if (error)
+      {
+         LOG_ERROR(error);
+      }
+      else if (pCookie)
+      {
+         response.addCookie(*pCookie);
+      }
+   }
+#endif
+
+   ptrConnection->sendResponse(response);
 
    // complete initialization of session
    init::ensureSessionInitialized();

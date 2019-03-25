@@ -13,6 +13,65 @@
 #
 #
 
+.rs.setVar("markdown.acCompletionTypes", list(
+   COMPLETION_HREF = 1
+))
+
+.rs.addJsonRpcHandler("markdown_get_completions", function(type, data)
+{
+   if (type == .rs.markdown.acCompletionTypes$COMPLETION_HREF)
+      return(.rs.markdown.getCompletionsHref(data))
+})
+
+.rs.addFunction("markdown.getCompletionsHref", function(data)
+{
+   # extract parameters
+   token <- data$token
+   path <- data$path
+   
+   # if we don't have a path, bail
+   if (is.null(path))
+      return(.rs.emptyCompletions())
+   
+   # figure out working directory
+   props <- .rs.getSourceDocumentProperties(path)
+   workingDirProp <- props$properties$working_dir
+   workingDir <- if (identical(workingDirProp, "project"))
+      props$project_path
+   else if (identical(workingDirProp, "current"))
+      getwd()
+   
+   # check for NULL working dir (don't include as part of if-else check above
+   # since some documents may not have an associated project and yet could
+   # be configured to use a project directory)
+   if (is.null(workingDir))
+      workingDir <- dirname(path)
+   
+   # determine dirname, basename (need to handle trailing slashes properly
+   # so can't just use dirname / basename)
+   slashes <- gregexpr("[/\\]", token)[[1]]
+   idx <- tail(slashes, n = 1)
+   lhs <- substring(token, 1, idx - 1)
+   rhs <- substring(token, idx + 1)
+   
+   # check to see if user is providing absolute path, and construct
+   # completion directory appropriately
+   isAbsolute <- grepl("^(?:[A-Z]:|/|\\\\|~)", token, perl = TRUE)
+   if (!isAbsolute)
+      lhs <- file.path(workingDir, lhs)
+   
+   # retrieve completions
+   completions <- .rs.getCompletionsFile(
+      token = rhs,
+      path = lhs,
+      quote = FALSE,
+      directoriesOnly = FALSE
+   )
+   
+   return(completions)
+   
+})
+
 .rs.addFunction("scalarListFromList", function(l, expressions = FALSE)
 {
    # hint that every non-list element of the hierarchical list l

@@ -16,7 +16,6 @@ package org.rstudio.studio.client.workbench.views.packages;
 
 import java.util.ArrayList;
 import java.util.List;
-
 import org.rstudio.core.client.Debug;
 import org.rstudio.core.client.cellview.ImageButtonColumn;
 import org.rstudio.core.client.cellview.ImageButtonColumn.TitleProvider;
@@ -26,6 +25,7 @@ import org.rstudio.core.client.resources.ImageResource2x;
 import org.rstudio.core.client.theme.res.ThemeResources;
 import org.rstudio.core.client.theme.res.ThemeStyles;
 import org.rstudio.core.client.widget.OperationWithInput;
+import org.rstudio.core.client.widget.RStudioDataGrid;
 import org.rstudio.core.client.widget.SearchWidget;
 import org.rstudio.core.client.widget.Toolbar;
 import org.rstudio.core.client.widget.ToolbarButton;
@@ -70,6 +70,7 @@ import com.google.gwt.user.client.Timer;
 import com.google.gwt.user.client.ui.LayoutPanel;
 import com.google.gwt.user.client.ui.SuggestOracle;
 import com.google.gwt.user.client.ui.Widget;
+import com.google.gwt.view.client.HasData;
 import com.google.gwt.view.client.ListDataProvider;
 import com.google.gwt.view.client.NoSelectionModel;
 import com.google.inject.Inject;
@@ -311,7 +312,7 @@ public class PackagesPane extends WorkbenchPane implements Packages.Display
       try
       {
          packagesTableContainer_.clear();
-         packagesTable_ = new DataGrid<PackageInfo>(
+         packagesTable_ = new RStudioDataGrid<PackageInfo>(
             packagesDataProvider_.getList().size(), dataGridRes_);
       }
       catch (Exception e)
@@ -518,6 +519,10 @@ public class PackagesPane extends WorkbenchPane implements Packages.Display
       
       packagesTableContainer_.add(packagesTable_);
       layoutPackagesTable();
+      
+      // unbind old table from data provider incase we've re-generated the pane
+      for (HasData<PackageInfo> display : packagesDataProvider_.getDataDisplays())
+         packagesDataProvider_.removeDataDisplay(display);
       
       packagesDataProvider_.addDataDisplay(packagesTable_);
    }

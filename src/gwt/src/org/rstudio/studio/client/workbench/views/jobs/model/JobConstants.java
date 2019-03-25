@@ -34,6 +34,24 @@ public class JobConstants
    
    // job types
    public final static int JOB_TYPE_UNKNOWN = 0;
-   public final static int JOB_TYPE_SESSION = 1;
-   public final static int JOB_TYPE_LAUNCHER = 2;
+   public final static int JOB_TYPE_SESSION = 1; // local job, child of rsession
+   public final static int JOB_TYPE_LAUNCHER = 2; // cluster job via job launcher
+   
+   public final static String stateDescription(int state)
+   {
+      switch(state)
+      {
+         case JobConstants.STATE_RUNNING:
+            return "Running";
+         case JobConstants.STATE_IDLE:
+            return "Idle";
+         case JobConstants.STATE_CANCELLED:
+            return "Cancelled";
+         case JobConstants.STATE_FAILED:
+            return "Failed";
+         case JobConstants.STATE_SUCCEEDED:
+            return "Succeeded";
+      }
+      return "Unknown " + state;
+   }
 }

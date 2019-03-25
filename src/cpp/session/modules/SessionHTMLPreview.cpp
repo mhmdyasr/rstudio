@@ -51,6 +51,7 @@
 #include <session/SessionModuleContext.hpp>
 #include <session/SessionSourceDatabase.hpp>
 #include <session/SessionAsyncRProcess.hpp>
+#include <session/SessionUrlPorts.hpp>
 
 #define kHTMLPreview "html_preview"
 #define kHTMLPreviewLocation "/" kHTMLPreview "/"
@@ -1008,7 +1009,7 @@ SEXP rs_showPageViewer(SEXP urlSEXP, SEXP titleSEXP, SEXP selfContainedSEXP)
          }
 
          // port mapping for RStudio Server
-         url = module_context::mapUrlPorts(url);
+         url = url_ports::mapUrlPorts(url);
       }
 
       // otherwise it's a file in the filesystem
@@ -1132,7 +1133,7 @@ core::json::Object capabilitiesAsJson()
       if (error)
          LOG_ERROR(error);
       else if (core::json::isType<core::json::Object>(valJson))
-         capsJson = valJson.get_obj();
+         capsJson = valJson.get_value<json::Object>();
    }
 
    return capsJson;

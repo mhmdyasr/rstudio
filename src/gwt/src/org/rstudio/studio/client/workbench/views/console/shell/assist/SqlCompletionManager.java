@@ -36,11 +36,7 @@ public class SqlCompletionManager extends CompletionManagerBase
                                CodeToolsServerOperations server,
                                CompletionContext context)
    {
-      super(popup, docDisplay, context);
-      
-      docDisplay_ = docDisplay;
-      server_ = server;
-      context_ = context;
+      super(popup, docDisplay, server, context);
    }
    
    @Override
@@ -90,16 +86,7 @@ public class SqlCompletionManager extends CompletionManagerBase
                uppercaseKeywordCount += 1;
          }
          
-         if (parseSqlFrom(it, ctx))
-            continue;
-         
-         if (parseSqlInto(it, ctx))
-            continue;
-         
-         if (parseSqlJoin(it, ctx))
-            continue;
-         
-         if (parseSqlUpdate(it, ctx))
+         if (parseSqlTableScopedKeyword(it, ctx))
             continue;
          
          if (parseSqlIdentifier(it, ctx))
@@ -135,10 +122,21 @@ public class SqlCompletionManager extends CompletionManagerBase
       return "";
    }
    
-   private boolean parseSqlFrom(TokenIterator it, SqlCompletionParseContext ctx)
+   private boolean parseSqlTableScopedKeyword(TokenIterator it,
+                                              SqlCompletionParseContext ctx)
    {
-      // consume initial from
-      if (!consumeKeyword(it, "from"))
+      // check for a SQL keyword that commonly precedes a table name
+      String keyword = null;
+      for (String candidate : new String[] { "from", "into", "join", "update", "drop" })
+      {
+         if (consumeKeyword(it, candidate))
+         {
+            keyword = candidate;
+            break;
+         }
+      }
+      
+      if (keyword == null)
          return false;
       
       TokenIterator clone = it.clone();
@@ -151,7 +149,8 @@ public class SqlCompletionManager extends CompletionManagerBase
          // check for text of form 'schema.table' and move on to
          // table name in that case
          String schema = "";
-         if (clone.peekFwd().valueEquals("."))
+         Token peek = clone.peekFwd();
+         if (peek != null && peek.valueEquals("."))
          {
             schema = sqlIdentifierValue(clone);
             
@@ -205,21 +204,6 @@ public class SqlCompletionManager extends CompletionManagerBase
       return true;
    }
    
-   private boolean parseSqlInto(TokenIterator it, SqlCompletionParseContext ctx)
-   {
-      return parseSqlTableScopedKeyword("into", it, ctx);
-   }
-   
-   private boolean parseSqlJoin(TokenIterator it, SqlCompletionParseContext ctx)
-   {
-      return parseSqlTableScopedKeyword("join", it, ctx);
-   }
-   
-   private boolean parseSqlUpdate(TokenIterator it, SqlCompletionParseContext ctx)
-   {
-      return parseSqlTableScopedKeyword("update", it, ctx);
-   }
-   
    private boolean parseSqlIdentifier(TokenIterator it, SqlCompletionParseContext ctx)
    {
       if (!isSqlIdentifier(it))
@@ -227,21 +211,6 @@ public class SqlCompletionManager extends CompletionManagerBase
       
       String identifier = sqlIdentifierValue(it);
       ctx.identifiers.push(identifier);
-      return true;
-   }
-   
-   private boolean parseSqlTableScopedKeyword(String keyword,
-                                              TokenIterator it,
-                                              SqlCompletionParseContext ctx)
-   {
-      if (!consumeKeyword(it, keyword))
-         return false;
-      
-      if (!isSqlIdentifier(it))
-         return false;
-      
-      String table = sqlIdentifierValue(it);
-      ctx.tables.push(table);
       return true;
    }
    
@@ -330,8 +299,4 @@ public class SqlCompletionManager extends CompletionManagerBase
    }
    
    private static final Pattern RE_SQL_PREVIEW = Pattern.create("^-{2,}\\s*!preview\\s+conn\\s*=\\s*(.*)$", "");
-   
-   private final DocDisplay docDisplay_;
-   private final CodeToolsServerOperations server_;
-   private final CompletionContext context_;
 }

@@ -1,7 +1,7 @@
 /*
  * SessionConsoleProcessTable.cpp
  *
- * Copyright (C) 2009-17 by RStudio, Inc.
+ * Copyright (C) 2009-18 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -40,14 +40,14 @@ typedef std::map<std::string, ConsoleProcessPtr> ProcTable;
 
 ProcTable s_procs;
 
-std::string serializeConsoleProcs()
+std::string serializeConsoleProcs(SerializationMode serialMode)
 {
    json::Array array;
    for (ProcTable::const_iterator it = s_procs.begin();
         it != s_procs.end();
         it++)
    {
-      array.push_back(it->second->toJson());
+      array.push_back(it->second->toJson(serialMode));
    }
 
    std::ostringstream ostr;
@@ -66,12 +66,12 @@ void deserializeConsoleProcs(const std::string& jsonStr)
       return;
    }
 
-   json::Array procs = value.get_array();
+   const json::Array& procs = value.get_array();
    for (json::Array::iterator it = procs.begin();
         it != procs.end();
         it++)
    {
-      ConsoleProcessPtr proc = ConsoleProcess::fromJson(it->get_obj());
+      ConsoleProcessPtr proc = ConsoleProcess::fromJson((*it).get_obj());
 
       // Deserializing consoleprocs list only happens during session
       // initialization, therefore they do not represent an actual running
@@ -93,7 +93,7 @@ bool isKnownProcHandle(const std::string& handle)
 
 void onSuspend(core::Settings* /*pSettings*/)
 {
-   serializeConsoleProcs();
+   serializeConsoleProcs(PersistentSerialization);
    s_visibleTerminalHandle.clear();
 }
 
@@ -173,7 +173,7 @@ std::pair<int, std::string> nextTerminalName()
 
 void saveConsoleProcesses()
 {
-   ConsoleProcessInfo::saveConsoleProcesses(serializeConsoleProcs());
+   ConsoleProcessInfo::saveConsoleProcesses(serializeConsoleProcs(PersistentSerialization));
 }
 
 void saveConsoleProcessesAtShutdown(bool terminatedNormally)
@@ -220,14 +220,14 @@ Error reapConsoleProcess(const ConsoleProcess& proc)
    return Success();
 }
 
-core::json::Array allProcessesAsJson()
+core::json::Array allProcessesAsJson(SerializationMode serialMode)
 {
    json::Array procInfos;
    for (ProcTable::const_iterator it = s_procs.begin();
         it != s_procs.end();
         it++)
    {
-      procInfos.push_back(it->second->toJson());
+      procInfos.push_back(it->second->toJson(serialMode));
    }
    return procInfos;
 }

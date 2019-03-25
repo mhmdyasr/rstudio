@@ -28,7 +28,7 @@ call set PATH=%PATH:C:\Program Files\Git\bin=%
 
 REM Establish build dir
 set BUILD_DIR=build
-if "%CMAKE_BUILD_TYPE%" == "" set CMAKE_BUILD_TYPE=Release
+if "%CMAKE_BUILD_TYPE%" == "" set CMAKE_BUILD_TYPE=RelWithDebInfo
 if "%CMAKE_BUILD_TYPE%" == "Debug" set BUILD_DIR=build-debug
 
 REM perform build 
@@ -40,6 +40,7 @@ if exist "%BUILD_DIR%/_CPack_Packages" rmdir /s /q "%BUILD_DIR%\_CPack_Packages"
 REM Configure and build the project. (Note that Windows / MSVC builds require
 REM that we specify the build type both at configure time and at build time)
 cmake -G"Visual Studio 15 2017 Win64" ^
+      -T host=x64 ^
       -DRSTUDIO_TARGET=Desktop ^
       -DCMAKE_BUILD_TYPE=%CMAKE_BUILD_TYPE% ^
       -DRSTUDIO_PACKAGE_BUILD=1 ^
@@ -51,8 +52,8 @@ REM create packages
 set VSINSTALLDIR="C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools"
 set VCINSTALLDIR="C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC"
 cd "%BUILD_DIR%"
-if not "%1" == "quick" cpack -G NSIS
-if "%CMAKE_BUILD_TYPE%" == "Release" cpack -G ZIP
+if not "%1" == "quick" cpack -C "%CMAKE_BUILD_TYPE%" -G NSIS
+if "%CMAKE_BUILD_TYPE%" == "RelWithDebInfo" cpack -C "%CMAKE_BUILD_TYPE%" -G ZIP
 cd ..
 
 REM reset modified environment variables (PATH)

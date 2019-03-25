@@ -1,7 +1,7 @@
 /*
  * StringUtil.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -1343,10 +1343,82 @@ public class StringUtil
       
       return string;
    }
+
+   /**
+    * @param path string to encode
+    * @param encodeLeadingTilde if false, don't encode leading ~
+    * @return Escaped string that can be passed on bash command-line.
+    *
+    * Determined special characters to encode from bash manpage.
+    *
+    * Does not support embedded newlines. Posix only.
+    */
+   public static final String escapeBashPath(String path, boolean encodeLeadingTilde)
+   {
+      if (StringUtil.isNullOrEmpty(path))
+         return "";
+   
+      String prefix = "";
+      if (!encodeLeadingTilde && path.startsWith("~"))
+      {
+         prefix = "~";
+         path = path.substring(1);
+      }
+
+      return prefix + BASH_RESERVED_CHAR.replaceAll(path, new ReplaceOperation()
+      {
+         @Override
+         public String replace(Match m)
+         {
+            return "\\" + m.getValue();
+         }
+      });
+   }
+   
+   /**
+    * Checks if a character is at a given position in a string. Will not throw an exception
+    * if attempting to look at an invalid index, or if the input string is null.
+    * @param str String to examine
+    * @param ch Character to find at given position
+    * @param pos Position to check
+    * @return true if ch is found at pos in str
+    */
+   public static boolean isCharAt(String str, char ch, int pos)
+   {
+      if (isNullOrEmpty(str))
+         return false;
+      
+      if (pos < 0 || pos >= str.length())
+         return false;
+      
+      return str.charAt(pos) == ch;
+   }
+
+   /**
+    * Prior to GWT 2.8.2, the String.charAt method was not range-checked and would not
+    * throw exceptions when invoked with an out-of-range position. We have code that assumes
+    * this old behavior.
+    * 
+    * Starting with 2.8.2 it will throw StringIndexOutOfBoundsException per Java standard.
+    * In cases where it's not obvious how to safely switch to the new behavior, this method
+    * can be substituted.
+    */
+   public static char charAt(String str, int pos)
+   {
+      try
+      {
+         return str.charAt(pos);         
+      }
+      catch (StringIndexOutOfBoundsException ex)
+      {
+         return '\0';         
+      }
+   }
    
    private static final NumberFormat FORMAT = NumberFormat.getFormat("0.#");
    private static final NumberFormat PRETTY_NUMBER_FORMAT = NumberFormat.getFormat("#,##0.#####");
    private static final DateTimeFormat DATE_FORMAT
                           = DateTimeFormat.getFormat("MMM d, yyyy, h:mm a");
    private static final Pattern RE_INDENT = Pattern.create("^\\s*", "");
+   private static final Pattern BASH_RESERVED_CHAR = Pattern.create("[^a-zA-Z0-9,._+@%/-]");
 }

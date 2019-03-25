@@ -14,9 +14,13 @@
  */
 package org.rstudio.studio.client.workbench.views.jobs.view;
 
+import java.util.Date;
+
 import org.rstudio.core.client.StringUtil;
 import org.rstudio.core.client.widget.ProgressBar;
 import org.rstudio.studio.client.workbench.views.jobs.JobProgressPresenter;
+import org.rstudio.studio.client.workbench.views.jobs.model.Job;
+import org.rstudio.studio.client.workbench.views.jobs.model.JobConstants;
 import org.rstudio.studio.client.workbench.views.jobs.model.LocalJobProgress;
 
 import com.google.gwt.core.client.GWT;
@@ -51,6 +55,42 @@ public class JobProgress extends Composite
       progress_.setProgress(progress.units(), progress.max());
       jobProgress_ = progress;
    }
+   
+   @Override
+   public void showJob(Job job)
+   {
+      name_.setText(job.name);
+      String status = JobConstants.stateDescription(job.state);
+      if (job.completed > 0)
+      {
+         // Job is not running; show its completion status and time
+         progress_.setVisible(false);
+         status += " " + StringUtil.friendlyDateTime(new Date(job.completed * 1000));
+         elapsed_.setText(StringUtil.conciseElaspedTime(job.completed - job.started));
+         status_.setVisible(true);
+      }
+      else if (job.max > 0)
+      {
+         // Job is running and has a progress bar; show it and hide the status indicator
+         progress_.setVisible(true);
+         progress_.setProgress(job.progress, job.max);
+         status_.setVisible(false);
+      }
+      else
+      {
+         // Job is running but does not have progress; show the status field
+         progress_.setVisible(false);
+         status_.setVisible(true);
+         if (!StringUtil.isNullOrEmpty(job.status))
+         {
+            // Still running; show its status
+            status = job.status;
+         }
+      }
+      status_.setText(status);
+      jobProgress_ = new LocalJobProgress(job);
+      complete_ = job.completed > 0;
+   }
 
    @Override
    public void updateElapsed(int timestamp)
@@ -62,17 +102,10 @@ public class JobProgress extends Composite
       elapsed_.setText(StringUtil.conciseElaspedTime(jobProgress_.elapsed() + delta));
    }
 
-   @Override
-   public void setComplete()
-   {
-      progress_.setVisible(false);
-      elapsed_.setVisible(false);
-      complete_ = true;
-   }
-
    @UiField Label name_;
    @UiField ProgressBar progress_;
    @UiField Label elapsed_;
+   @UiField Label status_;
    
    private LocalJobProgress jobProgress_;
    private boolean complete_;

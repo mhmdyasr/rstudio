@@ -127,7 +127,7 @@ public class RSConnectPublishButton extends Composite
       RStudioGinjector.INSTANCE.injectMembers(this);
       
       // compute initial visible state
-      applyVisiblity();
+      applyVisibility();
       applyCaption("Publish");
       setPreviousDeployments(null);
       
@@ -163,7 +163,7 @@ public class RSConnectPublishButton extends Composite
             @Override
             public void onVisibleChanged(AppCommand command)
             {
-               applyVisiblity();
+               applyVisibility();
             }
          });
 
@@ -173,7 +173,7 @@ public class RSConnectPublishButton extends Composite
             @Override
             public void onEnabledChanged(AppCommand command)
             {
-               applyVisiblity();
+               applyVisibility();
             }
          });
       }
@@ -225,7 +225,7 @@ public class RSConnectPublishButton extends Composite
       {
          docPreview_ = null;
       }
-      applyVisiblity();
+      applyVisibility();
    }
    
    public void setShinyPreview(ShinyApplicationParams params)
@@ -250,7 +250,7 @@ public class RSConnectPublishButton extends Composite
       {
          setContentPath(params.getSourceFile(), params.getHtmlFile());
          docPreview_ = new RenderedDocPreview(params);
-         applyVisiblity();
+         applyVisibility();
       }
    }
    
@@ -283,7 +283,7 @@ public class RSConnectPublishButton extends Composite
       if (!setType)
          setContentType(RSConnect.CONTENT_TYPE_DOCUMENT);
 
-      applyVisiblity();
+      applyVisibility();
    }
    
    public void setIsStatic(boolean isStatic)
@@ -292,7 +292,7 @@ public class RSConnectPublishButton extends Composite
       {
         docPreview_.setIsStatic(isStatic);
       }
-      applyVisiblity();
+      applyVisibility();
    }
 
    public void setContentType(int contentType)
@@ -317,14 +317,14 @@ public class RSConnectPublishButton extends Composite
              contentType == RSConnect.CONTENT_TYPE_PRES)
             setPreviousDeployments(null);
       }
-      applyVisiblity();
+      applyVisibility();
    }
    
    public void setPublishHtmlSource(PublishHtmlSource source)
    {
       publishHtmlSource_ = source;
       setPreviousDeployments(null);
-      applyVisiblity();
+      applyVisibility();
    }
 
 
@@ -369,7 +369,7 @@ public class RSConnectPublishButton extends Composite
       if (manuallyHidden_ != hide)
       {
          manuallyHidden_ = hide;
-         applyVisiblity();
+         applyVisibility();
       }
    }
    
@@ -510,7 +510,7 @@ public class RSConnectPublishButton extends Composite
          break;
       default: 
          // should never happen 
-         display_.showErrorMessage("Can't Publish " + 
+         display_.showErrorMessage("Can't publish " + 
             RSConnect.contentTypeDesc(contentType_), 
             "The content type '" + 
             RSConnect.contentTypeDesc(contentType_) + 
@@ -568,9 +568,9 @@ public class RSConnectPublishButton extends Composite
                   @Override
                   public void execute()
                   {
-                     String appLabel = StringUtil.isNullOrEmpty(contentPath_)
+                     String appLabel = StringUtil.isNullOrEmpty(applicationPath_)
                            ? "this application"
-                           : "'" + contentPath_ + "'";
+                           : "'" + applicationPath_ + "'";
                      
                      display_.showYesNoMessage(
                            GlobalDisplay.MSG_INFO,
@@ -671,15 +671,15 @@ public class RSConnectPublishButton extends Composite
       }
    }
    
-   private void applyVisiblity()
+   private void applyVisibility()
    {
-      publishMenuButton_.setVisible(recomputeMenuVisiblity());
+      publishMenuButton_.setVisible(recomputeMenuVisibility());
       setVisible(recomputeVisibility());
    }
    
    // recomputes visibility for the popup menu that offers republish
    // destinations
-   private boolean recomputeMenuVisiblity()
+   private boolean recomputeMenuVisibility()
    {
       if (pUiPrefs_.get().enableRStudioConnect().getGlobalValue())
       {
@@ -802,7 +802,8 @@ public class RSConnectPublishButton extends Composite
          return;
       }
    
-      String contentPath = contentPath_;
+      // compute the application path from the actual document path
+      applicationPath_ = contentPath_;
       boolean parent = false;
 
       // if this is a Shiny application or API and an .R file is being invoked, check
@@ -821,7 +822,7 @@ public class RSConnectPublishButton extends Composite
                !StringUtil.isNullOrEmpty(docPreview_.getWebsiteDir()))
          {
             // preview of a static website, use the website path to search for deployments
-            contentPath = docPreview_.getWebsiteDir(); 
+            applicationPath_ = docPreview_.getWebsiteDir(); 
          }
          else
          {
@@ -834,11 +835,12 @@ public class RSConnectPublishButton extends Composite
       if (parent)
       {
          FileSystemItem fsiContent = FileSystemItem.createFile(contentPath_);
-         contentPath = fsiContent.getParentPathString();
+         applicationPath_ = fsiContent.getParentPathString();
       }
 
       populating_ = true;
-      server_.getRSConnectDeployments(contentPath, 
+      server_.getRSConnectDeployments(
+            applicationPath_, 
             outputPath_ == null ? "" : outputPath_,
             new ServerRequestCallback<JsArray<RSConnectDeploymentRecord>>()
       {
@@ -866,7 +868,7 @@ public class RSConnectPublishButton extends Composite
    private void forgetDeployment()
    {
       server_.forgetRSConnectDeployments(
-            contentPath_,
+            applicationPath_ == null ? contentPath_ : applicationPath_,
             StringUtil.notNull(outputPath_),
             new ServerRequestCallback<Void>()
             {
@@ -875,9 +877,9 @@ public class RSConnectPublishButton extends Composite
                {
                   populateDeployments(true);
                   
-                  String appLabel = StringUtil.isNullOrEmpty(contentPath_)
+                  String appLabel = StringUtil.isNullOrEmpty(applicationPath_)
                         ? "this application"
-                        : "'" + contentPath_ + "'";
+                        : "'" + applicationPath_ + "'";
                   
                   display_.showMessage(
                         GlobalDisplay.MSG_INFO,
@@ -957,6 +959,7 @@ public class RSConnectPublishButton extends Composite
    private PlotPublishMRUList plotMru_;
 
    private String contentPath_;
+   private String applicationPath_;
    private String outputPath_;
    private int contentType_ = RSConnect.CONTENT_TYPE_NONE;
    private String populatedPath_;

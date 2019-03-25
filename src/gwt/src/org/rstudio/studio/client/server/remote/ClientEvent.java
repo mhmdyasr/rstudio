@@ -1,7 +1,7 @@
 /*
  * ClientEvent.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -35,7 +35,6 @@ class ClientEvent extends JavaScriptObject
    public static final String FileChanged = "file_changed";
    public static final String WorkingDirChanged = "working_dir_changed";
    public static final String PlotsStateChanged = "plots_state_changed";
-   public static final String ViewData = "view_data";
    public static final String PackageStatusChanged = "package_status_changed";
    public static final String PackageStateChanged = "package_state_changed";
    public static final String Locator = "locator";
@@ -183,6 +182,9 @@ class ClientEvent extends JavaScriptObject
    public static final String NewDocumentWithCode = "new_document_with_code";
    public static final String AvailablePackagesReady = "available_packages_ready";
    public static final String PlumberViewer = "plumber_viewer";
+   public static final String ComputeThemeColors = "compute_theme_colors";
+   public static final String RequestDocumentClose = "request_document_close";
+   public static final String ExecuteAppCommand = "execute_app_command";
 
    protected ClientEvent()
    {

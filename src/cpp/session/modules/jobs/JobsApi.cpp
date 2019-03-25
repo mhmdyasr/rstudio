@@ -95,26 +95,39 @@ boost::shared_ptr<Job> addJob(
    {
       id = core::system::generateShortenedUuid();
    } while (s_jobs.find(id) != s_jobs.end());
-   return addJob(id, name, status, group, progress, state, type, autoRemove, actions, show, tags);
+   return addJob(id,
+         ::time(0), /*recorded*/
+         0, /*started*/
+         0, /*completed*/
+         name, status, group, progress, state, type,
+         "" /*cluster*/,
+         autoRemove, actions, show,
+         true, /*saveOutput*/ 
+         tags);
 }
 
 boost::shared_ptr<Job> addJob(
       const std::string& id,
+      time_t recorded,
+      time_t started,
+      time_t completed,
       const std::string& name,
       const std::string& status,
       const std::string& group,
       int progress,
       JobState state,
       JobType type,
+      const std::string& cluster,
       bool autoRemove,
       SEXP actions,
       bool show,
+      bool saveOutput,
       std::vector<std::string> tags)
 {
    // create the job!
    boost::shared_ptr<Job> pJob = boost::make_shared<Job>(
-         id, name, status, group, 0 /* completed units */, 
-         progress, state, type, autoRemove, actions, show, tags);
+         id, recorded, started, completed, name, status, group, 0 /* completed units */,
+         progress, state, type, cluster, autoRemove, actions, show, saveOutput, tags);
 
    // cache job and notify client
    s_jobs[id] = pJob;
@@ -185,13 +198,13 @@ void removeAllLocalJobs()
    }
 }
 
-void removeCompletedJobs()
+void removeCompletedLocalJobs()
 {
    // collect completed jobs
    std::vector<boost::shared_ptr<Job> > completed;
    for (auto& job: s_jobs)
    {
-      if (job.second->complete())
+      if (job.second->complete() && job.second->type() == JobType::JobTypeSession)
          completed.push_back(job.second);
    }
 

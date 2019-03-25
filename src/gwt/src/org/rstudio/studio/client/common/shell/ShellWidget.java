@@ -1,7 +1,7 @@
 /*
  * ShellWidget.java
  *
- * Copyright (C) 2009-17 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -34,6 +34,7 @@ import org.rstudio.studio.client.application.events.EventBus;
 import org.rstudio.studio.client.common.debugging.model.UnhandledError;
 import org.rstudio.studio.client.common.debugging.ui.ConsoleError;
 import org.rstudio.studio.client.workbench.model.ConsoleAction;
+import org.rstudio.studio.client.workbench.prefs.model.UIPrefs;
 import org.rstudio.studio.client.workbench.views.console.ConsoleResources;
 import org.rstudio.studio.client.workbench.views.console.events.RunCommandWithDebugEvent;
 import org.rstudio.studio.client.workbench.views.console.shell.editor.InputEditorDisplay;
@@ -72,14 +73,15 @@ public class ShellWidget extends Composite implements ShellDisplay,
                                                       RequiresResize,
                                                       ConsoleError.Observer
 {
-   public ShellWidget(AceEditor editor, EventBus events)
+   public ShellWidget(AceEditor editor, UIPrefs prefs, EventBus events)
    {
       styles_ = ConsoleResources.INSTANCE.consoleStyles();
       events_ = events;
+      prefs_ = prefs;
       
       SelectInputClickHandler secondaryInputHandler = new SelectInputClickHandler();
 
-      output_ = new ConsoleOutputWriter();
+      output_ = new ConsoleOutputWriter(RStudioGinjector.INSTANCE.getVirtualConsoleFactory());
       output_.getWidget().setStylePrimaryName(styles_.output());
       output_.getWidget().addClickHandler(secondaryInputHandler);
       ElementIds.assignElementId(output_.getElement(), 
@@ -174,8 +176,6 @@ public class ShellWidget extends Composite implements ShellDisplay,
 
       verticalPanel_ = new VerticalPanel();
       verticalPanel_.setStylePrimaryName(styles_.console());
-      verticalPanel_.addStyleName("ace_text-layer");
-      verticalPanel_.addStyleName("ace_line");
       FontSizer.applyNormalFontSize(verticalPanel_);
       verticalPanel_.add(output_.getWidget());
       verticalPanel_.add(pendingInput_);
@@ -355,10 +355,17 @@ public class ShellWidget extends Composite implements ShellDisplay,
       clearErrors_ = true;
    }
 
+   public static String consolify(String text)
+   {
+      VirtualConsole console = RStudioGinjector.INSTANCE.getVirtualConsoleFactory().create(null);
+      console.submit(text);
+      return console.toString();
+   }
+
    public void consolePrompt(String prompt, boolean showInput)
    {
       if (prompt != null)
-         prompt = VirtualConsole.consolify(prompt);
+         prompt = consolify(prompt);
 
       prompt_.getElement().setInnerText(prompt);
       //input_.clear() ;
@@ -523,7 +530,7 @@ public class ShellWidget extends Composite implements ShellDisplay,
    
    /**
     * Directs focus/selection to the input box when a (different) widget
-    * is clicked.
+    * is clicked.)
     */
    private class SelectInputClickHandler implements ClickHandler,
                                                     KeyDownHandler,
@@ -538,14 +545,22 @@ public class ShellWidget extends Composite implements ShellDisplay,
             return;
          }
 
-         // Some clicks can result in selection (e.g. double clicks). We don't
-         // want to grab focus for those clicks, but we don't know yet if this
-         // click can generate a selection. Wait 400ms (unfortunately it's not
-         // possible to get the OS double-click timeout) for a selection to
-         // appear; if it doesn't then drive focus to the input box.
-         if (inputFocus_.isRunning())
-            inputFocus_.cancel();
-         inputFocus_.schedule(400);
+         if (prefs_ != null && prefs_.consoleDoubleClickSelect().getValue())
+         {
+            // Some clicks can result in selection (e.g. double clicks). We don't
+            // want to grab focus for those clicks, but we don't know yet if this
+            // click can generate a selection. Wait 400ms (unfortunately it's not
+            // possible to get the OS double-click timeout) for a selection to
+            // appear; if it doesn't then drive focus to the input box.
+            if (inputFocus_.isRunning())
+               inputFocus_.cancel();
+            inputFocus_.schedule(400);
+         }
+         else
+         {
+            // No selection check needed
+            inputFocus_.run();
+         }
       }
 
       public void onKeyDown(KeyDownEvent event)
@@ -759,6 +774,7 @@ public class ShellWidget extends Composite implements ShellDisplay,
    private final TimeBufferedCommand resizeCommand_;
    private boolean suppressPendingInput_;
    private final EventBus events_;
+   private final UIPrefs prefs_;
    
    // A list of errors that have occurred between console prompts. 
    private Map<String, List<Element>> errorNodes_ = new TreeMap<String, List<Element>>();

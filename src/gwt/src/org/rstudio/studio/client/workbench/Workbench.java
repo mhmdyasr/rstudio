@@ -162,7 +162,7 @@ public class Workbench implements BusyHandler,
       eventBus.addHandler(ShowPageViewerEvent.TYPE, this);
 
       // We don't want to send setWorkbenchMetrics more than once per 1/2-second
-      metricsChangedCommand_ = new TimeBufferedCommand(-1, -1, 500)
+      metricsChangedCommand_ = new TimeBufferedCommand(500)
       {
          @Override
          protected void performAction(boolean shouldSchedulePassive)
@@ -189,8 +189,8 @@ public class Workbench implements BusyHandler,
       if (defaultDialogDir != null)
          workbenchContext_.setDefaultFileDialogDir(defaultDialogDir);
       
-      // check for init messages
       checkForInitMessages();
+      checkForLicenseMessage();
       
       if (Desktop.isDesktop() && 
           StringUtil.equals(session_.getSessionInfo().getVcsName(), VCSConstants.GIT_ID))
@@ -480,6 +480,15 @@ public class Workbench implements BusyHandler,
                globalDisplay_.showLicenseWarningBar(false, message);
             }
          });
+      }
+   }
+
+   private void checkForLicenseMessage()
+   {
+      String licenseMessage = session_.getSessionInfo().getLicenseMessage();
+      if (!StringUtil.isNullOrEmpty(licenseMessage))
+      {
+         globalDisplay_.showLicenseWarningBar(false, licenseMessage);
       }
    }
     

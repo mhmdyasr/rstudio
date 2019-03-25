@@ -1,7 +1,7 @@
 /*
  * CompileOutputBufferWithHighlight.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -34,11 +34,9 @@ public class CompileOutputBufferWithHighlight extends Composite
       
       output_ = new PreWidget();
       output_.setStylePrimaryName(styles_.output());
-      output_.addStyleName("ace_text-layer");
-      output_.addStyleName("ace_line");
       output_.addStyleName(styles_.paddedOutput());
       FontSizer.applyNormalFontSize(output_);
-      console_ = new VirtualConsole(output_.getElement());
+      console_ = RStudioGinjector.INSTANCE.getVirtualConsoleFactory().create(output_.getElement());
     
       scrollPanel_ = new BottomScrollPanel();
       scrollPanel_.setSize("100%", "100%");

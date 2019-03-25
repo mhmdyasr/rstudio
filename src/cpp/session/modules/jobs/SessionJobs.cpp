@@ -29,6 +29,8 @@
 #include "ScriptJob.hpp"
 #include "SessionJobs.hpp"
 
+#include "../modules/overlay/SessionOverlay.hpp"
+
 using namespace rstudio::core;
 
 namespace rstudio {
@@ -190,7 +192,7 @@ SEXP rs_addJobOutput(SEXP jobSEXP, SEXP outputSEXP, SEXP errorSEXP)
    return R_NilValue;
 }
 
-SEXP rs_runScriptJob(SEXP path, SEXP encoding, SEXP dir, SEXP importEnv, SEXP exportEnv)
+SEXP rs_runScriptJob(SEXP path, SEXP name, SEXP encoding, SEXP dir, SEXP importEnv, SEXP exportEnv)
 {
    r::sexp::Protect protect;
    std::string filePath = r::sexp::safeAsString(path, "");
@@ -218,9 +220,19 @@ SEXP rs_runScriptJob(SEXP path, SEXP encoding, SEXP dir, SEXP importEnv, SEXP ex
       r::exec::error("The requested working directory '" + workingDir + "' does not exist.");
    }
 
+   FilePath scriptFilePath = module_context::resolveAliasedPath(filePath);
+
+   std::string jobName(r::sexp::safeAsString(name));
+   if (jobName.empty())
+   {
+      // no name was supplied for the job, so derive one from the filename
+      jobName = scriptFilePath.filename();
+   }
+
    std::string id;
    startScriptJob(ScriptLaunchSpec(
-            module_context::resolveAliasedPath(filePath),
+            jobName,
+            scriptFilePath,
             r::sexp::safeAsString(encoding),
             module_context::resolveAliasedPath(workingDir),
             r::sexp::asLogical(importEnv),
@@ -288,7 +300,9 @@ Error runScriptJob(const json::JsonRpcRequest& request,
                    json::JsonRpcResponse* pResponse)
 {
    json::Object jobSpec;
+   std::string name;
    std::string path;
+   std::string code;
    std::string workingDir;
    std::string encoding;
    bool importEnv;
@@ -298,20 +312,35 @@ Error runScriptJob(const json::JsonRpcRequest& request,
    if (error)
       return error;
 
-   error = json::readObject(jobSpec, "path", &path,
+   error = json::readObject(jobSpec, "name", &name,
+                                     "path", &path,
                                      "encoding", &encoding,
+                                     "code", &code,
                                      "working_dir", &workingDir,
                                      "import_env", &importEnv,
                                      "export_env", &exportEnv);
    if (error)
       return error;
 
-   startScriptJob(ScriptLaunchSpec(
+   if (code.empty())
+   {
+       startScriptJob(ScriptLaunchSpec(
+            name,
             module_context::resolveAliasedPath(path),
             encoding,
             module_context::resolveAliasedPath(workingDir),
             importEnv,
             exportEnv), &id);
+   }
+   else
+   {
+       startScriptJob(ScriptLaunchSpec(
+            name,
+            code,
+            module_context::resolveAliasedPath(workingDir),
+            importEnv,
+            exportEnv), &id);
+   }
 
    pResponse->setResult(id);
 
@@ -321,7 +350,7 @@ Error runScriptJob(const json::JsonRpcRequest& request,
 Error clearJobs(const json::JsonRpcRequest& request,
                       json::JsonRpcResponse* pResponse)
 {
-   removeCompletedJobs();
+   removeCompletedLocalJobs();
    return Success();
 }
 
@@ -339,6 +368,9 @@ Error setJobListening(const json::JsonRpcRequest& request,
    boost::shared_ptr<Job> pJob;
    if (!lookupJob(id, &pJob))
       return Error(json::errc::ParamInvalid, ERROR_LOCATION);
+
+   if (pJob->type() == JobType::JobTypeLauncher)
+      modules::overlay::streamLauncherOutput(id, listening);
 
    // if listening started, return the output so far
    if (listening)

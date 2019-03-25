@@ -53,6 +53,7 @@
 
 #include <server_core/http/LocalhostAsyncClient.hpp>
 #include <server_core/sessions/SessionLocalStreams.hpp>
+#include <server_core/UrlPorts.hpp>
 
 #include <session/SessionConstants.hpp>
 #include <session/SessionInvalidScope.hpp>
@@ -80,8 +81,7 @@ bool proxyRequest(int requestType,
                   const boost::shared_ptr<const http::Request>& pRequest,
                   const r_util::SessionContext &context,
                   boost::shared_ptr<core::http::AsyncConnection> ptrConnection,
-                  const http::ErrorHandler &errorHandler,
-                  const http::ConnectionRetryProfile &connectionRetryProfile);
+                  const http::ErrorHandler &errorHandler);
 
 bool proxyLocalhostRequest(http::Request& request,
                            const std::string& port,
@@ -89,6 +89,10 @@ bool proxyLocalhostRequest(http::Request& request,
                            boost::shared_ptr<core::http::AsyncConnection> ptrConnection,
                            const LocalhostResponseHandler& responseHandler,
                            const http::ErrorHandler& errorHandler);
+
+Error runVerifyInstallationSession(core::system::user::User& user,
+                                   bool* pHandled);
+
 } // namespace overlay
    
 namespace {
@@ -573,8 +577,7 @@ void proxyRequest(
    invokeRequestFilter(pRequest.get());
 
    // see if the request should be handled by the overlay
-   if (overlay::proxyRequest(requestType, pRequest, context, ptrConnection,
-                             errorHandler, connectionRetryProfile))
+   if (overlay::proxyRequest(requestType, pRequest, context, ptrConnection, errorHandler))
    {
       // request handled by the overlay
       return;
@@ -679,18 +682,28 @@ Error runVerifyInstallationSession()
    if (error)
       return error;
 
-   // launch verify installation session
-   core::system::Options args;
-   args.push_back(core::system::Option("--" kVerifyInstallationSessionOption, "1"));
-   PidType sessionPid;
-   error = server::launchSession(r_util::SessionContext(user.username),
-                                 args,
-                                 &sessionPid);
+   bool handled = false;
+   error = overlay::runVerifyInstallationSession(user, &handled);
    if (error)
       return error;
 
-   // wait for exit
-   return core::system::waitForProcessExit(sessionPid);
+   if (!handled)
+   {
+      // launch verify installation session
+      core::system::Options args;
+      args.push_back(core::system::Option("--" kVerifyInstallationSessionOption, "1"));
+      PidType sessionPid;
+      error = server::launchSession(r_util::SessionContext(user.username),
+                                    args,
+                                    &sessionPid);
+      if (error)
+         return error;
+
+      // wait for exit
+      return core::system::waitForProcessExit(sessionPid);
+   }
+
+   return Success();
 }
 
 void proxyContentRequest(
@@ -714,8 +727,9 @@ void proxyRpcRequest(
       boost::shared_ptr<core::http::AsyncConnection> ptrConnection)
 {
    // validate the user if this is client_init
-   if (boost::algorithm::ends_with(ptrConnection->request().uri(),
-                                   "client_init"))
+   bool isClientInit = boost::algorithm::ends_with(ptrConnection->request().uri(),
+                                                   "client_init");
+   if (isClientInit)
    {
       if (!validateUser(ptrConnection, username))
          return;
@@ -726,7 +740,7 @@ void proxyRpcRequest(
    if (!sessionContextForRequest(ptrConnection, username, &context))
       return;
 
-   proxyRequest(RequestType::Rpc,
+   proxyRequest(isClientInit ? RequestType::ClientInit : RequestType::Rpc,
                 context,
                 ptrConnection,
                 boost::bind(handleRpcError, ptrConnection, context, _1),
@@ -774,16 +788,35 @@ void proxyLocalhostRequest(
    // call request filter if we have one
    invokeRequestFilter(&request);
 
-   // extract the port
+   // extract the (scrambled) port, which consists of 8 hex digits
    std::string pMap = ipv6 ? "/p6/" : "/p/";
-   boost::regex re(pMap + "(\\d+)/");
+   boost::regex re(pMap + "([a-fA-F0-9]{8})(/|$)");
    boost::smatch match;
    if (!regex_utils::search(request.uri(), match, re))
    {
       ptrConnection->response().setNotFoundError(request);
       return;
    }
-   std::string port = match[1];
+
+   // extract the port token
+   std::string portToken = ptrConnection->request().cookieValue(kPortTokenCookie);
+   if (portToken.empty())
+   {
+      // we'll try the default token if no token was supplied on the request
+      portToken = kDefaultPortToken;
+   }
+
+   // unscramble the port using the token
+   int portNum = server_core::detransformPort(portToken, match[1]);
+   if (portNum < 0)
+   {
+      // act as though there's no content here if we can't determine the correct port
+      ptrConnection->response().setNotFoundError(request);
+      return;
+   }
+
+   std::string port = safe_convert::numberToString(portNum);
+
 
    // strip the port part of the uri
    using namespace boost::algorithm;

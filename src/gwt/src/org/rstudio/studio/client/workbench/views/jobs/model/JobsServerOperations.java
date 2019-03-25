@@ -26,7 +26,4 @@ public interface JobsServerOperations
    void startJob(JobLaunchSpec spec, ServerRequestCallback<String> callback);
    void clearJobs(ServerRequestCallback<Void> callback);
    void executeJobAction(String id, String action, ServerRequestCallback<Void> callback);
-   void getLauncherJobsEnabled(ServerRequestCallback<Boolean> callback);
-   void startLauncherJobStatusStream(String jobId, ServerRequestCallback<Void> callback);
-   void stopLauncherJobStatusStream(String jobId, ServerRequestCallback<Void> callback);
 }

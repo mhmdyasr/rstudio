@@ -1,7 +1,7 @@
 /*
  * WidgetListBox.java
  *
- * Copyright (C) 2009-14 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -106,9 +106,13 @@ public class WidgetListBox<T extends Widget>
       add(scrollPanel_);
      
       emptyTextLabel_ = new Label();
-      emptyTextLabel_.addStyleName(style_.scrollPanel());
-      emptyTextLabel_.addStyleName(style_.emptyMessage());
-      
+      emptyTextBox_ = new VerticalPanel();
+      emptyTextBox_.addStyleName(style_.scrollPanel());
+      emptyTextBox_.addStyleName(style_.emptyMessage());
+      emptyTextBox_.add(emptyTextLabel_);
+      emptyTextBox_.setCellHorizontalAlignment(emptyTextLabel_, VerticalPanel.ALIGN_CENTER);
+      emptyTextBox_.setCellVerticalAlignment(emptyTextLabel_, VerticalPanel.ALIGN_MIDDLE);
+
       addKeyDownHandler(new KeyDownHandler()
       {
          @Override
@@ -265,6 +269,16 @@ public class WidgetListBox<T extends Widget>
       updateEmptyText();
    }
    
+   public void removeItem(int idx)
+   {
+      panel_.remove(idx);
+      options_.remove(idx);
+      items_.remove(idx);
+      if (selectedIdx_ == idx)
+         selectedIdx_ = 0;
+      updateEmptyText();
+   }
+   
    public void setEmptyText(String text)
    {
       emptyTextLabel_.setText(text);
@@ -273,15 +287,15 @@ public class WidgetListBox<T extends Widget>
    
    private void updateEmptyText()
    {
-      if (emptyTextLabel_.getParent() == this && items_.size() > 0)
+      if (emptyTextBox_.getParent() == this && items_.size() > 0)
       {
          clear();
          add(scrollPanel_);
       }
-      else if (emptyTextLabel_.getParent() != this && items_.size() == 0)
+      else if (emptyTextBox_.getParent() != this && items_.size() == 0)
       {
          clear();
-         add(emptyTextLabel_);
+         add(emptyTextBox_);
       }
    }
    
@@ -289,6 +303,7 @@ public class WidgetListBox<T extends Widget>
 
    private ScrollPanel scrollPanel_;
    private VerticalPanel panel_;
+   private VerticalPanel emptyTextBox_;
    private Label emptyTextLabel_;
    private List<HTMLPanel> options_ = new ArrayList<HTMLPanel>();
    private List<T> items_ = new ArrayList<T>();

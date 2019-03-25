@@ -147,11 +147,12 @@ public:
       if (json::parse(contents, &parsedJson) &&
           json::isType<json::Object>(parsedJson))
       {
-         json::Object addinsJson = parsedJson.get_obj();
+         const json::Object& addinsJson = parsedJson.get_obj();
 
-         BOOST_FOREACH(const std::string& key, addinsJson | boost::adaptors::map_keys)
+         for(const json::Member& member : addinsJson)
          {
-            json::Value valueJson = addinsJson.at(key);
+            const std::string& key = member.name();
+            const json::Value& valueJson = member.value();
             if (json::isType<json::Object>(valueJson))
             {
                bool interactive;
@@ -170,15 +171,11 @@ public:
                }
                
                // attempt read to ordinal (note that this was not persisted
-               // as part of older addin databases so we read it separately
-               // and simply log errors rather than treating them as failures
-               // to read an entry from the database)
+               // as part of older addin databases so we read it separately;
+               // we don't log errors as they're rather noisy and otherwise
+               // harmless)
                int ordinal = 0;
-               error = json::readObject(valueJson.get_obj(),
-                                        "ordinal", &ordinal);
-               if (error)
-                  LOG_ERROR(error);
-
+               json::readObject(valueJson.get_obj(), "ordinal", &ordinal);
                addins_[key] = AddinSpecification(name,
                                                  package,
                                                  title,

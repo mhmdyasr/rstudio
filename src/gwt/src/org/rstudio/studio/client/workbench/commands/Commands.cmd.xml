@@ -239,6 +239,8 @@ well as menu structures (for main menu and popup menus).
             <separator/>
             <cmd refid="executeAllCode"/>
          </menu>
+         <cmd refid="runSelectionAsLauncherJob"/>
+         <cmd refid="runSelectionAsJob"/>
          <cmd refid="sendToTerminal"/>
          <separator/>
          <cmd refid="previewJS"/>
@@ -311,7 +313,8 @@ well as menu structures (for main menu and popup menus).
          <cmd refid="activateBuild"/>
          <cmd refid="activateConnections"/>
          <cmd refid="activateJobs"/>
-         
+         <cmd refid="activateLauncherJobs"/>
+
          <separator/>
          <cmd refid="synctexSearch"/>
       </menu>
@@ -458,7 +461,14 @@ well as menu structures (for main menu and popup menus).
          <menu label="_Jobs">
             <cmd refid="startJob"/>
             <cmd refid="clearJobs"/>
+            <separator/>
+            <cmd refid="activateJobs"/>
           </menu>
+         <menu label="Launcher">
+            <cmd refid="startLauncherJob"/>
+            <separator/>
+            <cmd refid="activateLauncherJobs"/>
+         </menu>
          <menu label="Addins">
             <cmd refid="browseAddins"/>
          </menu>
@@ -672,14 +682,12 @@ well as menu structures (for main menu and popup menus).
          <shortcut refid="switchToTab" value="Ctrl+X B" if="!org.rstudio.core.client.BrowseCap.isMacintosh()" disableModes="default,vim,sublime"/>
          <shortcut refid="switchToTab" value="Ctrl+Shift+."/>
          <shortcut refid="nextTab" value="Ctrl+Alt+Right" if="!org.rstudio.core.client.BrowseCap.isLinux()"/>
-         <shortcut refid="nextTab" value="Ctrl+PageDown" if="org.rstudio.core.client.BrowseCap.isLinux()"/>
          <shortcut refid="nextTab" value="Ctrl+X Right" disableModes="default,vim,sublime"/>
          <shortcut refid="nextTab" value="Ctrl+F12"/>
          <shortcut refid="nextTab" value="Ctrl+Tab" if="org.rstudio.studio.client.application.Desktop.isDesktop()"/>
          <shortcut refid="nextTab" value="Cmd+Shift+]" disableModes="default,vim,emacs"/>
          <shortcut refid="previousTab" value="Ctrl+Alt+Left" if="!org.rstudio.core.client.BrowseCap.isLinux()"/>
          <shortcut refid="previousTab" value="Ctrl+F11"/>
-         <shortcut refid="previousTab" value="Ctrl+PageUp" if="org.rstudio.core.client.BrowseCap.isLinux()"/>
          <shortcut refid="previousTab" value="Ctrl+X Left" disableModes="default,vim,sublime"/>
          <shortcut refid="previousTab" value="Ctrl+Shift+Tab" if="org.rstudio.studio.client.application.Desktop.isDesktop()"/>
          <shortcut refid="previousTab" value="Cmd+Shift+[" disableModes="default,vim,emacs"/>
@@ -1257,7 +1265,12 @@ well as menu structures (for main menu and popup menus).
         label="Show Jobs Pane"
         menuLabel = "Show _Jobs"
         windowMode="main"/>
-         
+
+   <cmd id="activateLauncherJobs"
+        label="Show Launcher Pane"
+        menuLabel = "Show Launcher"
+        windowMode="main"/>
+
    <cmd id="layoutZoomSource"
         checkable="true"
         label="Zoom Source"
@@ -3299,19 +3312,54 @@ well as menu structures (for main menu and popup menus).
          windowMode="main"/>
 
     <cmd id="startJob"
-         menuLabel="Start Job..."
-         buttonLabel="Start Job"
-         desc="Run a background job"
+         menuLabel="Start Local Job..."
+         buttonLabel="Start Local Job"
+         desc="Run a background local job"
          windowMode="main"/>
 
     <cmd id="sourceAsJob"
-         menuLabel="Source as Job..."
-         desc="Run the current R script as a job"
+         menuLabel="Source as Local Job..."
+         desc="Run the current R script as a local job"
          windowMode="any"/>
 
     <cmd id="clearJobs"
-         menuLabel="Clear Jobs"
-         desc="Clean up all completed jobs"
+         menuLabel="Clear Local Jobs"
+         desc="Clean up all completed local jobs"
          windowMode="main"/>
         
+    <cmd id="runSelectionAsJob"
+         menuLabel="Run Selection as Local Job"
+         desc="Run the selected code as a local job"
+         windowMode="any"/>
+
+    <cmd id="startLauncherJob"
+         menuLabel="Start Launcher Job..."
+         buttonLabel="Start Launcher Job"
+         desc="Run a background job on a cluster"
+         windowMode="main"/>
+
+    <cmd id="sourceAsLauncherJob"
+         menuLabel="Source as Launcher Job..."
+         desc="Run the current R script on a cluster"
+         windowMode="any"/>
+
+    <cmd id="runSelectionAsLauncherJob"
+         menuLabel="Run Selection as Launcher Job"
+         desc="Run the selected code as a launcher job"
+         windowMode="any"/>
+
+    <cmd id="sortLauncherJobsRecorded"
+         menuLabel="Sort by Submission Time"
+         desc="Sort jobs by time submitted"
+         rebindable="false"
+         checkable="true"
+         windowMode="any"/>
+
+    <cmd id="sortLauncherJobsState"
+         menuLabel="Sort by Job State"
+         desc="Sort jobs by current state"
+         rebindable="false"
+         checkable="true"
+         windowMode="any"/>
+
 </commands>

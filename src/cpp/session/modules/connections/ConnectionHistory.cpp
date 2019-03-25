@@ -39,7 +39,7 @@ bool isConnection(const ConnectionId& id, json::Value valueJson)
       return false;
    }
 
-   json::Object connJson = valueJson.get_obj();
+   const json::Object& connJson = valueJson.get_obj();
    return hasConnectionId(id, connJson);
 }
 
@@ -168,7 +168,7 @@ Error ConnectionHistory::readConnections(json::Array* pConnections)
                             ERROR_LOCATION);
       }
 
-      *pConnections = parsedJson.get_array();
+      *pConnections = parsedJson.get_value<json::Array>();
    }
 
    return Success();

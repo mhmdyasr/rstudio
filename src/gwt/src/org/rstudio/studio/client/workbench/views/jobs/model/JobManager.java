@@ -1,7 +1,7 @@
 /*
  * JobManager.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -30,6 +30,7 @@ import org.rstudio.studio.client.common.GlobalDisplay;
 import org.rstudio.studio.client.server.ServerError;
 import org.rstudio.studio.client.server.ServerRequestCallback;
 import org.rstudio.studio.client.server.VoidServerRequestCallback;
+import org.rstudio.studio.client.workbench.WorkbenchContext;
 import org.rstudio.studio.client.workbench.commands.Commands;
 import org.rstudio.studio.client.workbench.events.SessionInitEvent;
 import org.rstudio.studio.client.workbench.events.SessionInitHandler;
@@ -40,6 +41,7 @@ import org.rstudio.studio.client.workbench.views.jobs.events.JobInitEvent;
 import org.rstudio.studio.client.workbench.views.jobs.events.JobProgressEvent;
 import org.rstudio.studio.client.workbench.views.jobs.events.JobRefreshEvent;
 import org.rstudio.studio.client.workbench.views.jobs.events.JobRunScriptEvent;
+import org.rstudio.studio.client.workbench.views.jobs.events.JobRunSelectionEvent;
 import org.rstudio.studio.client.workbench.views.jobs.events.JobUpdatedEvent;
 import org.rstudio.studio.client.workbench.views.jobs.view.JobLauncherDialog;
 import org.rstudio.studio.client.workbench.views.jobs.view.JobQuitDialog;
@@ -55,6 +57,7 @@ import com.google.inject.Singleton;
 public class JobManager implements JobRefreshEvent.Handler,
                                    JobUpdatedEvent.Handler,
                                    JobRunScriptEvent.Handler,
+                                   JobRunSelectionEvent.Handler,
                                    JobExecuteActionEvent.Handler,
                                    SessionInitHandler
 {
@@ -70,7 +73,7 @@ public class JobManager implements JobRefreshEvent.Handler,
                      JobsServerOperations server,
                      GlobalDisplay display,
                      Provider<SourceWindowManager> pSourceManager,
-                     LauncherJobManager launcherJobManager)
+                     Provider<WorkbenchContext> pWorkbench)
    {
       events_ = events;
       pSession_ = pSession;
@@ -78,12 +81,13 @@ public class JobManager implements JobRefreshEvent.Handler,
       server_ = server;
       display_ = display;
       pSourceManager_ = pSourceManager;
-      launcherJobManager_ = launcherJobManager;
+      pWorkbench_ = pWorkbench;
       binder.bind(commands, this);
       events.addHandler(SessionInitEvent.TYPE, this);
       events.addHandler(JobRefreshEvent.TYPE, this);
       events.addHandler(JobUpdatedEvent.TYPE, this);
       events.addHandler(JobRunScriptEvent.TYPE, this);
+      events.addHandler(JobRunSelectionEvent.TYPE, this);
       events.addHandler(JobExecuteActionEvent.TYPE, this);
    }
    
@@ -134,7 +138,20 @@ public class JobManager implements JobRefreshEvent.Handler,
    @Override
    public void onJobRunScript(JobRunScriptEvent event)
    {
-      showJobLauncherDialog(event.path());
+      showJobLauncherDialog(FileSystemItem.createFile(event.path()));
+   }
+
+   @Override
+   public void onJobRunSelection(JobRunSelectionEvent event)
+   {
+      FileSystemItem path = null;
+      if (event.path() != null)
+         path = FileSystemItem.createFile(event.path());
+
+      FileSystemItem workingDir = path == null ?
+         pWorkbench_.get().getCurrentWorkingDir() : path.getParentPath();
+
+      showJobLauncherDialog(path, workingDir, event.code());
    }
 
    @Override
@@ -160,7 +177,7 @@ public class JobManager implements JobRefreshEvent.Handler,
          script = path;
       }
 
-      showJobLauncherDialog(script);
+      showJobLauncherDialog(FileSystemItem.createFile(script));
    }
    
    @Handler
@@ -168,8 +185,8 @@ public class JobManager implements JobRefreshEvent.Handler,
    {
       display_.showYesNoMessage(
             GlobalDisplay.MSG_QUESTION, 
-            "Remove Completed Jobs", 
-            "Do you want to remove completed jobs from the list of jobs?\n\nYou can't undo this.", 
+            "Remove Completed Local Jobs",
+            "Are you sure you want to remove completed local jobs from the list of jobs?\n\nOnce removed, local jobs cannot be recovered.",
             false, // include cancel
             () ->  server_.clearJobs(new VoidServerRequestCallback()),
             null,  // do nothing on No
@@ -362,9 +379,31 @@ public class JobManager implements JobRefreshEvent.Handler,
 
    // Private methods ---------------------------------------------------------
    
-   private void showJobLauncherDialog(String path)
+   private void showJobLauncherDialog(FileSystemItem path, FileSystemItem workingDir, String code)
    {
-      JobLauncherDialog dialog = new JobLauncherDialog("Run Script as Job",
+      JobLauncherDialog dialog = new JobLauncherDialog("Run Selection as Job",
+            JobLauncherDialog.JobSource.Selection,
+            path,
+            workingDir,
+            code,
+            spec ->
+            {
+               server_.startJob(spec, new ServerRequestCallback<String>() {
+                  @Override
+                  public void onError(ServerError error)
+                  {
+                     Debug.logError(error);
+                  }
+               });
+            }
+      );
+      dialog.showModal();
+   }
+   
+   private void showJobLauncherDialog(FileSystemItem path)
+   {
+      JobLauncherDialog dialog = new JobLauncherDialog("Run Script as Local Job",
+            JobLauncherDialog.JobSource.Script,
             path,
             spec ->
             {
@@ -431,8 +470,8 @@ public class JobManager implements JobRefreshEvent.Handler,
    // injected
    private final EventBus events_;
    private final Provider<Session> pSession_;
+   private final Provider<WorkbenchContext> pWorkbench_;
    private final JobsServerOperations server_;
    private final Provider<SourceWindowManager> pSourceManager_;
    private final GlobalDisplay display_;
-   private final LauncherJobManager launcherJobManager_;
 }

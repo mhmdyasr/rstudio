@@ -1,7 +1,7 @@
 /*
  * UIPrefsAccessor.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -498,7 +498,12 @@ public class UIPrefsAccessor extends Prefs
    {
       return bool("ignore_uppercase_words", true);
    }
-   
+
+   public PrefValue<Boolean> realTimeSpellChecking()
+   {
+      return bool("real_time_spellchecking", false);
+   }
+
    public PrefValue<Boolean> ignoreWordsWithNumbers()
    {
       return bool("ignore_words_with_numbers", true);
@@ -683,9 +688,26 @@ public class UIPrefsAccessor extends Prefs
       return bool("show_hidden_files", false);
    }
 
-   public PrefValue<Boolean> showJobsTab()
+   public static final int JOBS_TAB_CLOSED = 0;
+   public static final int JOBS_TAB_SHOWN = 1;
+   public static final int JOBS_TAB_DEFAULT = 2;
+   
+   public PrefValue<Integer> jobsTabVisibility()
    {
-      return bool("show_jobs_tab", true);
+      return integer("jobs_tab_visibility", JOBS_TAB_DEFAULT);
+   }
+   
+   public PrefValue<Boolean> showLauncherJobsTab()
+   {
+      return bool("show_launcher_jobs_tab", true);
+   }
+   
+   public static final int JOBS_SORT_RECORDED = 0;
+   public static final int JOBS_SORT_STATE = 1;
+   
+   public PrefValue<Integer> launcherJobsSort()
+   {
+      return integer("launcher_jobs_sort", JOBS_SORT_RECORDED);
    }
    
    public static final int BUSY_DETECT_ALWAYS = 0;
@@ -747,6 +769,11 @@ public class UIPrefsAccessor extends Prefs
    public PrefValue<Boolean> gitDiffIgnoreWhitespace()
    {
       return bool("git_diff_ignore_whitespace", false);
+   }
+   
+   public PrefValue<Boolean> consoleDoubleClickSelect()
+   {
+      return bool("console_double_click_select", false);
    }
    
    // Meant to be called when the satellite window receives the sessionInfo.

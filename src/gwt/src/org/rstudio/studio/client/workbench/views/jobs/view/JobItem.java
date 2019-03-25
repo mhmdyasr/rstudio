@@ -1,7 +1,7 @@
 /*
  * JobItem.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -16,13 +16,15 @@ package org.rstudio.studio.client.workbench.views.jobs.view;
 
 import java.util.Date;
 
+import com.google.inject.Inject;
+import com.google.inject.assistedinject.Assisted;
 import org.rstudio.core.client.JsArrayUtil;
 import org.rstudio.core.client.StringUtil;
 import org.rstudio.core.client.dom.DomUtils;
 import org.rstudio.core.client.resources.ImageResource2x;
 import org.rstudio.core.client.widget.ProgressBar;
 import org.rstudio.core.client.widget.ToolbarButton;
-import org.rstudio.studio.client.RStudioGinjector;
+import org.rstudio.studio.client.application.events.FireEvents;
 import org.rstudio.studio.client.workbench.views.jobs.events.JobExecuteActionEvent;
 import org.rstudio.studio.client.workbench.views.jobs.events.JobSelectionEvent;
 import org.rstudio.studio.client.workbench.views.jobs.model.Job;
@@ -44,7 +46,7 @@ import com.google.gwt.user.client.ui.Label;
 import com.google.gwt.user.client.ui.VerticalPanel;
 import com.google.gwt.user.client.ui.Widget;
 
-public class JobItem extends Composite
+public class JobItem extends Composite implements JobItemView
 {
    private static JobItemUiBinder uiBinder = GWT.create(JobItemUiBinder.class);
 
@@ -59,9 +61,9 @@ public class JobItem extends Composite
 
       @Source("select_2x.png")
       ImageResource jobSelect();
-
-      @Source("info_2x.png")
-      ImageResource jobInfo();
+      
+      @Source("cancel_2x.png")
+      ImageResource jobCancel();
    }
    
    public interface Styles extends CssResource
@@ -81,43 +83,47 @@ public class JobItem extends Composite
       String outer();
       String panel();
       String select();
+      String noSelect();
       String status();
       String progress();
       String failed();
    }
 
-   public JobItem(final Job job)
+   @Inject
+   public JobItem(@Assisted Job job, FireEvents eventBus)
    {
-      stop_ = new ToolbarButton(
-            RStudioGinjector.INSTANCE.getCommands().interruptR().getImageResource(), evt ->
-            {
-               RStudioGinjector.INSTANCE.getEventBus().fireEvent(
-                     new JobExecuteActionEvent(job.id, JobConstants.ACTION_STOP));
-            });
+      eventBus_ = eventBus;
+      stop_ = new ToolbarButton(new ImageResource2x(RESOURCES.jobCancel()), evt ->
+      {
+         eventBus_.fireEvent(new JobExecuteActionEvent(job.id, JobConstants.ACTION_STOP));
+      });
+      
       initWidget(uiBinder.createAndBindUi(this));
       
       name_.setText(job.name);
       spinner_.setResource(new ImageResource2x(RESOURCES.jobSpinner()));
-
+      
       ImageResource2x detailsImage = new ImageResource2x(RESOURCES.jobSelect());
       if (JsArrayUtil.jsArrayStringContains(job.actions, JobConstants.ACTION_INFO))
       {
-         detailsImage = new ImageResource2x(RESOURCES.jobInfo());
+         select_.addStyleName(styles_.noSelect());
       }
       
       select_.setResource(detailsImage);
 
-      ClickHandler selectJob = evt -> 
+      ClickHandler selectJob = evt ->
       {
          if (DomUtils.isDescendant(
                Element.as(evt.getNativeEvent().getEventTarget()),
-               running_.getElement()))
+               running_.getElement()) ||
+             DomUtils.isDescendant(
+               Element.as(evt.getNativeEvent().getEventTarget()),
+                   stop_.getElement()))
          {
-            // ignore clicks occurring inside the progress area
+            // ignore clicks occurring inside the progress area, or the stop button
             return;
          }
-         RStudioGinjector.INSTANCE.getEventBus().fireEvent(
-               new JobSelectionEvent(job.id, true, true));
+         eventBus_.fireEvent(new JobSelectionEvent(job.id, job.type, true, true));
       };
       select_.addClickHandler(selectJob);
       panel_.addClickHandler(selectJob);
@@ -127,35 +133,31 @@ public class JobItem extends Composite
       update(job);
    }
    
+   @Override
    public void update(Job job)
    {
       // cache reference to job
       job_ = job;
       
       String clazz = "";
-      String state = "";
+      String state = JobConstants.stateDescription(job_.state);
 
       switch(job_.state)
       {
          case JobConstants.STATE_RUNNING:
             clazz = styles_.running();
-            state = "Running";
             break;
          case JobConstants.STATE_IDLE:
             clazz = styles_.idle();
-            state = "Idle";
             break;
          case JobConstants.STATE_CANCELLED:
             clazz = styles_.cancelled();
-            state = "Cancelled";
             break;
          case JobConstants.STATE_FAILED:
             clazz = styles_.failed();
-            state = "Failed";
             break;
          case JobConstants.STATE_SUCCEEDED:
             clazz = styles_.succeeded();
-            state = "Succeeded";
             break;
       }
 
@@ -186,23 +188,33 @@ public class JobItem extends Composite
             state_.setText(job.status);
             running_.setVisible(false);
          }
+         else
+         {
+            running_.setVisible(false);
+         }
       }
       else
       {
          // not running; hide the progress area
          running_.setVisible(false);
       }
-
       
       // show the state if we're not showing the progress bar
       state_.setVisible(!running_.isVisible());
       
       // show stop button if job has a "stop" action, and is not completed
-      stop_.setVisible(
-            JsArrayUtil.jsArrayStringContains(job_.actions, JobConstants.ACTION_STOP) &&
-            job_.completed == 0);
+      if (job_.completed == 0)
+      {
+         stop_.setVisible(
+               JsArrayUtil.jsArrayStringContains(job_.actions, JobConstants.ACTION_STOP) &&
+               job_.completed == 0);
+      }
+      else
+      {
+         stop_.setVisible(false);
+      }
       
-      // udpate progress bar if it's showing
+      // update progress bar if it's showing
       if (running_.isVisible())
       {
          double percent = ((double)job.progress / (double)job.max) * 100.0;
@@ -216,11 +228,13 @@ public class JobItem extends Composite
       syncTime((int)((new Date()).getTime() * 0.001));
    }
    
+   @Override
    public Job getJob()
    {
       return job_;
    }
    
+   @Override
    public void syncTime(int timestamp)
    {
       // if job is not running, we have nothing to do
@@ -255,4 +269,7 @@ public class JobItem extends Composite
    @UiField FocusPanel panel_;
    @UiField(provided=true) ToolbarButton stop_;
    @UiField Styles styles_;
+   
+   // injected
+   private final FireEvents eventBus_;
 }

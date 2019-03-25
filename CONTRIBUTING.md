@@ -6,17 +6,9 @@ If you're experiencing behavior that appears to be a bug in RStudio, you're welc
 
 2. Is your issue a bug rather than a question? If you're having general trouble with RStudio or have questions for the RStudio community, the [RStudio Community Forum](https://community.rstudio.com/c/rstudio-ide) is an excellent resource.
 
-3. Are you the first person to report this issue? [Search the issue list](https://github.com/rstudio/rstudio/issues) to find out. If you aren't, the most helpful thing you can do is vote for the existing issue (add a reaction to it), and optionally add a comment describing your own experience.
+3. Are you the first person to report this issue? [Search the issue list](https://github.com/rstudio/rstudio/issues) to find out. If you aren't, the most helpful thing you can do is vote for the existing issue (add a +1 reaction to it), and optionally add a comment describing your own experience.
 
-When you're ready to file an issue, please do the following:
-
-1. If at all possible, include a [minimal working example](https://en.wikipedia.org/wiki/Minimal_Working_Example) which will reproduce the bug. If you're unable to reproduce consistently, then please do your best to provide us a set of actions, or other steps that seem to be correlated with the issue you are seeing. 
-
-2. Indicate your operating system, exact version of RStudio (from *Help | About RStudio*) and the output of `sessionInfo()` in R.
-
-3. If appropriate, include screenshots, any relevant log files, and a [diagnostic report](https://support.rstudio.com/hc/en-us/articles/200321257-Running-a-Diagnostics-Report).
-
-Label your issue with **bug**. We appreciate you taking the time to file a report; detailed bug reports from the community help us tremendously!
+When you're ready to file an issue, see our [guide to writing good bug reports](https://github.com/rstudio/rstudio/wiki/Writing-Good-Bug-Reports) for more on how to write a great bug report.
 
 ## Enhancements
 
@@ -39,4 +31,18 @@ We welcome contributions to RStudio. To submit a contribution:
 3. Submit a [pull request](https://help.github.com/articles/using-pull-requests).
 
 We'll try to be as responsive as possible in reviewing and accepting pull requests. Appreciate your contributions very much!
+
+## Code of Conduct
+
+As contributors and maintainers of this project, we pledge to respect all people who contribute through reporting issues, posting feature requests, updating documentation, submitting pull requests or patches, and other activities.
+
+We are committed to making participation in this project a harassment-free experience for everyone, regardless of level of experience, gender, gender identity and expression, sexual orientation, disability, personal appearance, body size, race, ethnicity, age, or religion.
+
+Examples of unacceptable behavior by participants include the use of sexual language or imagery, derogatory comments or personal attacks, trolling, public or private harassment, insults, or other unprofessional conduct.
+
+Project maintainers have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct. Project maintainers who do not follow the Code of Conduct may be removed from the project team.
+
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by opening an issue or contacting one or more of the project maintainers.
+
+This Code of Conduct is adapted from the Contributor Covenant, version 1.0.0, available at <https://www.contributor-covenant.org/version/1/0/0/code-of-conduct.html>.
 

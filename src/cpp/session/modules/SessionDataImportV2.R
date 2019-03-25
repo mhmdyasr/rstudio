@@ -216,7 +216,7 @@
                      numeric = "\"numeric\"",
                      date = "\"date\"",
                      character = "\"text\"",
-                     skip = "\"blank\""
+                     skip = "\"skip\""
                   )
                }
             }
@@ -685,7 +685,7 @@
    }
 
    list(
-      data = unname(data),
+      data = unname(as.list(data)),
       columns = columns
    )
 })

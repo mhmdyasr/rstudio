@@ -19,7 +19,7 @@
 #include <boost/enable_shared_from_this.hpp>
 
 #include <core/FilePath.hpp>
-#include <core/json/Json.hpp>
+#include <core/json/JsonRpc.hpp>
 #include <core/system/Process.hpp>
 #include <core/system/Types.hpp>
 
@@ -54,6 +54,12 @@ enum AutoCloseMode
    DefaultAutoClose = 0, // obey user preference
    AlwaysAutoClose = 1, // always auto-close
    NeverAutoClose = 2, // never auto-close
+};
+
+enum SerializationMode
+{
+   ClientSerialization = 0, // serialize for front-end client
+   PersistentSerialization = 1  // serialize for persistent storage
 };
 
 extern const int kDefaultMaxOutputLines;
@@ -190,8 +196,8 @@ public:
    void setTrackEnv(bool trackEnv) { trackEnv_ = trackEnv; }
    bool getTrackEnv() const { return trackEnv_; }
 
-   core::json::Object toJson() const;
-   static boost::shared_ptr<ConsoleProcessInfo> fromJson(core::json::Object& obj);
+   core::json::Object toJson(SerializationMode serialMode) const;
+   static boost::shared_ptr<ConsoleProcessInfo> fromJson(const core::json::Object& obj);
 
    static std::string loadConsoleProcessMetadata();
    static void deleteOrphanedLogs(bool (*validHandle)(const std::string&));

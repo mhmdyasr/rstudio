@@ -869,7 +869,7 @@ public class RSConnectDeploy extends Composite
          return;
       }
 
-      // ternery operator maps to appropriate files to list for deployment:
+      // ternary operator maps to appropriate files to list for deployment:
       // website code    - website code directory 
       // static website  - website build directory
       // document        - R Markdown document
@@ -881,6 +881,17 @@ public class RSConnectDeploy extends Composite
                      source_.getWebsiteDir() :
                   source_.getDeployFile() : 
             source_.getDeployDir();
+                  
+      // getDeploymentFiles fails if we don't give it a source -- this should
+      // never happen, but if it does this error message will be more useful
+      if (StringUtil.isNullOrEmpty(fileSource))
+      {
+         indicator.onError("Could not determine the list of files to deploy. " +
+                  "Try re-rendering and ensuring that you're publishing to a " +
+                  "server which supports this kind of content.");
+         indicator.onCompleted();
+         return;
+      }
 
       indicator.onProgress("Collecting files...");
       server_.getDeploymentFiles(
