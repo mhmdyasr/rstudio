@@ -1,7 +1,7 @@
 /*
  * Source.java
  *
- * Copyright (C) 2009-19 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -34,7 +34,6 @@ import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.json.client.JSONString;
 import com.google.gwt.json.client.JSONValue;
-import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.user.client.Command;
 import com.google.gwt.user.client.Event;
 import com.google.gwt.user.client.Event.NativePreviewEvent;
@@ -49,13 +48,16 @@ import com.google.inject.Provider;
 import org.rstudio.core.client.*;
 import org.rstudio.core.client.command.AppCommand;
 import org.rstudio.core.client.command.Handler;
+import org.rstudio.core.client.command.KeyCombination;
 import org.rstudio.core.client.command.KeyboardShortcut;
+import org.rstudio.core.client.command.KeySequence;
 import org.rstudio.core.client.command.ShortcutManager;
 import org.rstudio.core.client.dom.WindowEx;
 import org.rstudio.core.client.events.*;
 import org.rstudio.core.client.files.FileSystemItem;
 import org.rstudio.core.client.js.JsObject;
 import org.rstudio.core.client.js.JsUtil;
+import org.rstudio.core.client.theme.DocTabSelectionEvent;
 import org.rstudio.core.client.widget.Operation;
 import org.rstudio.core.client.widget.OperationWithInput;
 import org.rstudio.core.client.widget.ProgressIndicator;
@@ -63,7 +65,10 @@ import org.rstudio.core.client.widget.ProgressOperationWithInput;
 import org.rstudio.studio.client.RStudioGinjector;
 import org.rstudio.studio.client.application.ApplicationAction;
 import org.rstudio.studio.client.application.ApplicationUtils;
+import org.rstudio.studio.client.application.AriaLiveService;
 import org.rstudio.studio.client.application.Desktop;
+import org.rstudio.studio.client.application.events.AriaLiveStatusEvent.Severity;
+import org.rstudio.studio.client.application.events.AriaLiveStatusEvent.Timing;
 import org.rstudio.studio.client.application.events.CrossWindowEvent;
 import org.rstudio.studio.client.application.events.EventBus;
 import org.rstudio.studio.client.common.FileDialogs;
@@ -73,6 +78,7 @@ import org.rstudio.studio.client.common.GlobalProgressDelayer;
 import org.rstudio.studio.client.common.SimpleRequestCallback;
 import org.rstudio.studio.client.common.dependencies.DependencyManager;
 import org.rstudio.studio.client.common.filetypes.EditableFileType;
+import org.rstudio.studio.client.common.filetypes.FileIcon;
 import org.rstudio.studio.client.common.filetypes.FileType;
 import org.rstudio.studio.client.common.filetypes.FileTypeRegistry;
 import org.rstudio.studio.client.common.filetypes.ObjectExplorerFileType;
@@ -115,7 +121,8 @@ import org.rstudio.studio.client.workbench.model.SessionUtils;
 import org.rstudio.studio.client.workbench.model.UnsavedChangesItem;
 import org.rstudio.studio.client.workbench.model.UnsavedChangesTarget;
 import org.rstudio.studio.client.workbench.model.helper.IntStateValue;
-import org.rstudio.studio.client.workbench.prefs.model.UIPrefs;
+import org.rstudio.studio.client.workbench.prefs.model.UserPrefs;
+import org.rstudio.studio.client.workbench.prefs.model.UserState;
 import org.rstudio.studio.client.workbench.snippets.SnippetHelper;
 import org.rstudio.studio.client.workbench.snippets.model.SnippetsChangedEvent;
 import org.rstudio.studio.client.workbench.ui.unsaved.UnsavedChangesDialog;
@@ -207,7 +214,7 @@ public class Source implements InsertSourceHandler,
                                     HasSelectionHandlers<Integer>
    {
       void addTab(Widget widget,
-                  ImageResource icon,
+                  FileIcon icon,
                   String docId,
                   String name,
                   String tooltip,
@@ -236,7 +243,7 @@ public class Source implements InsertSourceHandler,
       void ensureVisible();
 
       void renameTab(Widget child,
-                     ImageResource icon,
+                     FileIcon icon,
                      String value,
                      String tooltip);
 
@@ -258,11 +265,13 @@ public class Source implements InsertSourceHandler,
                  FileDialogs fileDialogs,
                  RemoteFileSystemContext fileContext,
                  EventBus events,
+                 AriaLiveService ariaLive,
                  final Session session,
                  Synctex synctex,
                  WorkbenchContext workbenchContext,
                  Provider<FileMRUList> pMruList,
-                 UIPrefs uiPrefs,
+                 UserPrefs userPrefs,
+                 UserState userState,
                  Satellite satellite,
                  ConsoleEditorProvider consoleEditorProvider,
                  RnwWeaveRegistry rnwWeaveRegistry,
@@ -279,11 +288,13 @@ public class Source implements InsertSourceHandler,
       fileContext_ = fileContext;
       rmarkdown_ = new TextEditingTargetRMarkdownHelper();
       events_ = events;
+      ariaLive_ = ariaLive;
       session_ = session;
       synctex_ = synctex;
       workbenchContext_ = workbenchContext;
       pMruList_ = pMruList;
-      uiPrefs_ = uiPrefs;
+      userPrefs_ = userPrefs;
+      userState_ = userState;
       consoleEditorProvider_ = consoleEditorProvider;
       rnwWeaveRegistry_ = rnwWeaveRegistry;
       dependencyManager_ = dependencyManager;
@@ -327,6 +338,8 @@ public class Source implements InsertSourceHandler,
       dynamicCommands_.add(commands.sourceActiveDocument());
       dynamicCommands_.add(commands.sourceActiveDocumentWithEcho());
       dynamicCommands_.add(commands.knitDocument());
+      dynamicCommands_.add(commands.toggleRmdVisualMode());
+      dynamicCommands_.add(commands.enableProsemirrorDevTools());
       dynamicCommands_.add(commands.previewHTML());
       dynamicCommands_.add(commands.compilePDF());
       dynamicCommands_.add(commands.compileNotebook());
@@ -352,6 +365,7 @@ public class Source implements InsertSourceHandler,
       dynamicCommands_.add(commands.debugImportDump());
       dynamicCommands_.add(commands.goToLine());
       dynamicCommands_.add(commands.checkSpelling());
+      dynamicCommands_.add(commands.wordCount());
       dynamicCommands_.add(commands.codeCompletion());
       dynamicCommands_.add(commands.findUsages());
       dynamicCommands_.add(commands.debugBreakpoint());
@@ -382,9 +396,14 @@ public class Source implements InsertSourceHandler,
       dynamicCommands_.add(commands.notebookClearAllOutput());
       dynamicCommands_.add(commands.notebookToggleExpansion());
       dynamicCommands_.add(commands.sendToTerminal());
+      dynamicCommands_.add(commands.openNewTerminalAtEditorLocation());
+      dynamicCommands_.add(commands.sendFilenameToTerminal());
       dynamicCommands_.add(commands.renameSourceDoc());
       dynamicCommands_.add(commands.sourceAsLauncherJob());
       dynamicCommands_.add(commands.sourceAsJob());
+      dynamicCommands_.add(commands.runSelectionAsJob());
+      dynamicCommands_.add(commands.runSelectionAsLauncherJob());
+      dynamicCommands_.add(commands.toggleSoftWrapMode());
       for (AppCommand command : dynamicCommands_)
       {
          command.setVisible(false);
@@ -392,23 +411,19 @@ public class Source implements InsertSourceHandler,
       }
 
       // fake shortcuts for commands which we handle at a lower level
-      commands.goToHelp().setShortcut(new KeyboardShortcut(112));
-      commands.goToDefinition().setShortcut(new KeyboardShortcut(113));
-      commands.codeCompletion().setShortcut(
-                                    new KeyboardShortcut(KeyCodes.KEY_TAB));
-      
-      // See bug 3673 and https://bugs.webkit.org/show_bug.cgi?id=41016
-      if (BrowseCap.isMacintosh())
-      {
-         ShortcutManager.INSTANCE.register(
-               KeyboardShortcut.META | KeyboardShortcut.ALT,
-               192,
-               commands.executeNextChunk(), 
-               "Execute",
-               commands.executeNextChunk().getMenuLabel(false), 
-               "");
-      }
+      commands.goToHelp().setShortcut(new KeyboardShortcut("F1", KeyCodes.KEY_F1, KeyboardShortcut.NONE));
+      commands.goToDefinition().setShortcut(new KeyboardShortcut("F2", KeyCodes.KEY_F2, KeyboardShortcut.NONE));
 
+      // If tab has been disabled for auto complete by the user, set the "shortcut" to ctrl-space instead.
+      if (userPrefs_.tabCompletion().getValue() && !userPrefs_.tabKeyMoveFocus().getValue())
+         commands.codeCompletion().setShortcut(new KeyboardShortcut("Tab", KeyCodes.KEY_TAB, KeyboardShortcut.NONE));
+      else
+      {
+         KeySequence sequence = new KeySequence();
+         sequence.add(new KeyCombination("Ctrl+Space", KeyCodes.KEY_SPACE, KeyCodes.KEY_CTRL));
+         commands.codeCompletion().setShortcut(new KeyboardShortcut(sequence));
+      }
+      
       events.addHandler(ShowContentEvent.TYPE, this);
       events.addHandler(ShowDataEvent.TYPE, this);
       events.addHandler(OpenObjectExplorerEvent.TYPE, this);
@@ -544,7 +559,7 @@ public class Source implements InsertSourceHandler,
       });
       
       events.addHandler(CollabEditEndedEvent.TYPE, 
-    		  new CollabEditEndedEvent.Handler() 
+            new CollabEditEndedEvent.Handler()
       {
          @Override
          public void onCollabEditEnded(final CollabEditEndedEvent collab) 
@@ -613,6 +628,7 @@ public class Source implements InsertSourceHandler,
       }
       
       restoreDocuments(session);
+
       
       // get the key to use for active tab persistence; use ordinal-based key
       // for source windows rather than their ID to avoid unbounded accumulation
@@ -627,7 +643,7 @@ public class Source implements InsertSourceHandler,
       {
          @Override
          protected void onInit(Integer value)
-         {
+         { 
             if (value == null)
                return;
             if (value >= 0 && view_.getTabCount() > value)
@@ -649,14 +665,14 @@ public class Source implements InsertSourceHandler,
          }
       };
       
-      AceEditorNative.syncUiPrefs(uiPrefs_);
+      AceEditorNative.syncUiPrefs(userPrefs_);
       
       // sync UI prefs with shortcut manager
-      if (uiPrefs_.useVimMode().getGlobalValue())
+      if (userPrefs_.editorKeybindings().getValue() == UserPrefs.EDITOR_KEYBINDINGS_VIM)
          ShortcutManager.INSTANCE.setEditorMode(KeyboardShortcut.MODE_VIM);
-      else if (uiPrefs_.enableEmacsKeybindings().getGlobalValue())
+      else if (userPrefs_.editorKeybindings().getValue() == UserPrefs.EDITOR_KEYBINDINGS_EMACS)
          ShortcutManager.INSTANCE.setEditorMode(KeyboardShortcut.MODE_EMACS);
-      else if (uiPrefs_.enableSublimeKeybindings().getGlobalValue())
+      else if (userPrefs_.editorKeybindings().getValue() == UserPrefs.EDITOR_KEYBINDINGS_SUBLIME)
          ShortcutManager.INSTANCE.setEditorMode(KeyboardShortcut.MODE_SUBLIME);
       else
          ShortcutManager.INSTANCE.setEditorMode(KeyboardShortcut.MODE_DEFAULT);
@@ -761,7 +777,7 @@ public class Source implements InsertSourceHandler,
       vimCommands_.closeAllTabs(this);
       vimCommands_.createNewDocument(this);
       vimCommands_.saveAndCloseActiveTab(this);
-      vimCommands_.readFile(this, uiPrefs_.defaultEncoding().getValue());
+      vimCommands_.readFile(this, userPrefs_.defaultEncoding().getValue());
       vimCommands_.runRScript(this);
       vimCommands_.reflowText(this);
       vimCommands_.showVimHelp(
@@ -1190,50 +1206,67 @@ public class Source implements InsertSourceHandler,
                         "creation were not installed.");
                   return;
                }
-               String basename = "r_markdown_notebook";
-               if (BrowseCap.isMacintosh())
-                  basename += "_osx";
 
                newSourceDocWithTemplate(
                      FileTypeRegistry.RMARKDOWN,
                      "",
-                     basename + ".Rmd",
+                     "notebook.Rmd",
                      Position.create(3, 0));
             }
          });
    }
    
    @Handler
+   public void onNewCDoc()
+   {
+      newDoc(FileTypeRegistry.C, new ResultCallback<EditingTarget, ServerError>()
+      {
+         @Override
+         public void onSuccess(EditingTarget target)
+         {
+            target.verifyCppPrerequisites();
+         }
+      });
+   }
+   
+   
+   @Handler
    public void onNewCppDoc()
    {
-      if (uiPrefs_.useRcppTemplate().getValue())
-      {
-         newSourceDocWithTemplate(
-             FileTypeRegistry.CPP, 
-             "", 
-             "rcpp.cpp",
-             Position.create(0, 0),
-             new CommandWithArg<EditingTarget> () {
-               @Override
-               public void execute(EditingTarget target)
-               {
-                  target.verifyCppPrerequisites(); 
-               }
-             }
-         );
-      }
-      else
-      {
-         newDoc(FileTypeRegistry.CPP,
-                new ResultCallback<EditingTarget, ServerError> () {
-                   @Override
-                   public void onSuccess(EditingTarget target)
-                   {
-                      target.verifyCppPrerequisites();
-                   }
-                });
-      }
+      newSourceDocWithTemplate(
+          FileTypeRegistry.CPP, 
+          "", 
+          userPrefs_.useRcppTemplate().getValue() ? "rcpp.cpp" : "default.cpp",
+          Position.create(0, 0),
+          new CommandWithArg<EditingTarget> () {
+            @Override
+            public void execute(EditingTarget target)
+            {
+               target.verifyCppPrerequisites(); 
+            }
+          }
+      );
    }
+   
+   @Handler
+   public void onNewHeaderDoc()
+   {
+      newDoc(FileTypeRegistry.H, new ResultCallback<EditingTarget, ServerError>()
+      {
+         @Override
+         public void onSuccess(EditingTarget target)
+         {
+            target.verifyCppPrerequisites();
+         }
+      });
+   }
+   
+   @Handler
+   public void onNewMarkdownDoc()
+   {
+      newDoc(FileTypeRegistry.MARKDOWN, null);
+   }
+   
    
    @Handler
    public void onNewPythonDoc()
@@ -1246,6 +1279,30 @@ public class Source implements InsertSourceHandler,
             target.verifyPythonPrerequisites();
          }
       });
+   }
+   
+   @Handler
+   public void onNewShellDoc()
+   {
+      newDoc(FileTypeRegistry.SH, null);
+   }
+   
+   @Handler
+   public void onNewHtmlDoc()
+   {
+      newDoc(FileTypeRegistry.HTML, null);
+   }
+   
+   @Handler
+   public void onNewJavaScriptDoc()
+   {
+      newDoc(FileTypeRegistry.JS, null);
+   }
+   
+   @Handler
+   public void onNewCssDoc()
+   {
+      newDoc(FileTypeRegistry.CSS, null);
    }
    
    @Handler
@@ -1295,10 +1352,10 @@ public class Source implements InsertSourceHandler,
    {
       // set concordance value if we need to
       String concordance = new String();
-      if (uiPrefs_.alwaysEnableRnwConcordance().getValue())
+      if (userPrefs_.alwaysEnableRnwConcordance().getValue())
       {
          RnwWeave activeWeave = rnwWeaveRegistry_.findTypeIgnoreCase(
-                                    uiPrefs_.defaultSweaveEngine().getValue());
+                                    userPrefs_.defaultSweaveEngine().getValue());
          if (activeWeave.getInjectConcordance())
             concordance = "\\SweaveOpts{concordance=TRUE}\n";
       }
@@ -1490,9 +1547,8 @@ public class Source implements InsertSourceHandler,
    {
       newSourceDocWithTemplate(FileTypeRegistry.RHTML, 
                                "", 
-                               "r_html.Rhtml");
+                               "default.Rhtml");
    }
-   
    
    @Handler
    public void onNewRDocumentationDoc()
@@ -1509,7 +1565,7 @@ public class Source implements InsertSourceHandler,
                   {
                      newSourceDocWithTemplate(FileTypeRegistry.RD, 
                            result.name, 
-                           "r_documentation_empty.Rd",
+                           "default.Rd",
                            Position.create(3, 7));
                   }  
                };
@@ -1612,7 +1668,7 @@ public class Source implements InsertSourceHandler,
    {
       newSourceDocWithTemplate(FileTypeRegistry.RMARKDOWN, 
             "", 
-            "r_markdown.Rmd",
+            "v1.Rmd",
             Position.create(3, 0));
    }
    
@@ -1624,15 +1680,20 @@ public class Source implements InsertSourceHandler,
             @Override
             public void execute(final NewRMarkdownDialog.Result result)
             {
-               if (result.isNewDocument())
+               if (result == null)
+               {
+                  // No document chosen, just create an empty one
+                  newSourceDocWithTemplate(FileTypeRegistry.RMARKDOWN, "", "default.Rmd");
+               }
+               else if (result.isNewDocument())
                {
                   NewRMarkdownDialog.RmdNewDocument doc = 
                         result.getNewDocument();
                   String author = doc.getAuthor();
                   if (author.length() > 0)
                   {
-                     uiPrefs_.documentAuthor().setGlobalValue(author);
-                     uiPrefs_.writeUIPrefs();
+                     userPrefs_.documentAuthor().setGlobalValue(author);
+                     userPrefs_.writeUserPrefs();
                   }
                   newRMarkdownV2Doc(doc);
                }
@@ -1680,17 +1741,17 @@ public class Source implements InsertSourceHandler,
             String template = "";
             // select a template appropriate to the document type we're creating
             if (doc.getTemplate().equals(RmdTemplateData.PRESENTATION_TEMPLATE))
-               template = "r_markdown_v2_presentation.Rmd";
+               template = "presentation.Rmd";
             else if (doc.isShiny())
             {
                if (doc.getFormat().endsWith(
                      RmdOutputFormat.OUTPUT_PRESENTATION_SUFFIX))
-                  template = "r_markdown_presentation_shiny.Rmd";
+                  template = "shiny_presentation.Rmd";
                else
-                  template = "r_markdown_shiny.Rmd";
+                  template = "shiny.Rmd";
             }
             else
-               template = "r_markdown_v2.Rmd";
+               template = "document.Rmd";
             newSourceDocWithTemplate(FileTypeRegistry.RMARKDOWN, 
                   "", 
                   template,
@@ -1785,7 +1846,33 @@ public class Source implements InsertSourceHandler,
    private void newDoc(EditableFileType fileType,
                        ResultCallback<EditingTarget, ServerError> callback)
    {
-      newDoc(fileType, null, callback);
+      if (fileType instanceof TextFileType)
+      {
+         // This is a text file, so see if the user has defined a template for it.
+         TextFileType textType = (TextFileType)fileType;
+         server_.getSourceTemplate("", 
+               "default" + textType.getDefaultExtension(),
+               new ServerRequestCallback<String>()
+               {
+                  @Override
+                  public void onResponseReceived(String template)
+                  {
+                     // Create a new document with the supplied template.
+                     newDoc(fileType, template, callback);
+                  }
+
+                  @Override
+                  public void onError(ServerError error)
+                  {
+                     // Ignore errors; there's just not a template for this type.
+                     newDoc(fileType, null, callback);
+                  }
+               });
+      }
+      else
+      {
+         newDoc(fileType, null, callback);
+      }
    }
    
    private void newDoc(EditableFileType fileType,
@@ -1923,13 +2010,13 @@ public class Source implements InsertSourceHandler,
    @Handler
    public void onPreviousTab()
    {
-      switchToTab(-1, uiPrefs_.wrapTabNavigation().getValue());
+      switchToTab(-1, userPrefs_.wrapTabNavigation().getValue());
    }
 
    @Handler
    public void onNextTab()
    {
-      switchToTab(1, uiPrefs_.wrapTabNavigation().getValue());
+      switchToTab(1, userPrefs_.wrapTabNavigation().getValue());
    }
 
    @Handler
@@ -2210,6 +2297,7 @@ public class Source implements InsertSourceHandler,
    @Handler
    public void onSaveAllSourceDocs()
    {
+      // Save all documents in the main window
       cpsExecuteForEachEditor(editors_, new CPSEditingTargetCommand()
       {
          @Override
@@ -2225,6 +2313,9 @@ public class Source implements InsertSourceHandler,
             }
          }
       });
+
+      // Save all documents in satellite windows
+      windowManager_.saveUnsavedDocuments(null, null);
    }
    
    
@@ -2723,6 +2814,7 @@ public class Source implements InsertSourceHandler,
    
    public void onEditPresentationSource(final EditPresentationSourceEvent event)
    { 
+      openingForSourceNavigation_ = true;
       openFile(
             event.getSourceFile(), 
             FileTypeRegistry.RPRESENTATION,
@@ -2730,6 +2822,7 @@ public class Source implements InsertSourceHandler,
                @Override
                public void execute(final EditingTarget editor)
                {   
+                  openingForSourceNavigation_ = false;
                   TextEditingTargetPresentationHelper.navigateToSlide(
                                                          editor, 
                                                          event.getSlideIndex());
@@ -2754,7 +2847,7 @@ public class Source implements InsertSourceHandler,
          return;
       
       // we're about to open in this window--if it's the main window, focus it
-      if (SourceWindowManager.isMainSourceWindow() && Desktop.isDesktop())
+      if (SourceWindowManager.isMainSourceWindow() && Desktop.hasDesktopFrame())
          Desktop.getFrame().bringMainFrameToFront();
       
       final boolean isDebugNavigation = 
@@ -2785,7 +2878,7 @@ public class Source implements InsertSourceHandler,
                         filePos.getEndLine() - 1,
                         filePos.getEndColumn() + 1);
                   
-                  if (Desktop.isDesktop() && 
+                  if (Desktop.hasDesktopFrame() &&
                       navMethod != NavigationMethods.DEBUG_END)
                       Desktop.getFrame().bringMainFrameToFront();
                }
@@ -2835,7 +2928,7 @@ public class Source implements InsertSourceHandler,
                      // now navigate to the new position
                      boolean highlight = 
                            navMethod == NavigationMethods.HIGHLIGHT_LINE &&
-                           !uiPrefs_.highlightSelectedLine().getValue();
+                           !userPrefs_.highlightSelectedLine().getValue();
                      target.navigateToPosition(srcPosition,
                                                false,
                                                highlight);
@@ -2872,10 +2965,15 @@ public class Source implements InsertSourceHandler,
          @Override
          public void execute(FileSystemItem file)
          {
+            // set flag indicating we are opening for a source navigation
+            openingForSourceNavigation_ = position != null || pattern != null;
+            
             openFile(file,
                      fileType,
-                     editingTargetAction);
-                     
+                     (target) -> {
+                        openingForSourceNavigation_ = false;
+                        editingTargetAction.execute(target);
+                     });      
          }
       };
 
@@ -3249,7 +3347,7 @@ public class Source implements InsertSourceHandler,
 
    private void confirmOpenLargeFile(FileSystemItem file,
                                      Operation openOperation,
-                                     Operation cancelOperation)
+                                     Operation noOperation)
    {
       StringBuilder msg = new StringBuilder();
       msg.append("The source file '" + file.getName() + "' is large (");
@@ -3259,7 +3357,9 @@ public class Source implements InsertSourceHandler,
       globalDisplay_.showYesNoMessage(GlobalDisplay.MSG_WARNING,
                                       "Confirm Open",
                                       msg.toString(),
+                                      false, // Don't include cancel
                                       openOperation,
+                                      noOperation,
                                       false);   // 'No' is default
    }
 
@@ -3274,7 +3374,7 @@ public class Source implements InsertSourceHandler,
       server_.openDocument(
             file.getPath(),
             fileType.getTypeId(),
-            uiPrefs_.defaultEncoding().getValue(),
+            userPrefs_.defaultEncoding().getValue(),
             new ServerRequestCallback<SourceDocument>()
             {
                @Override
@@ -3290,6 +3390,16 @@ public class Source implements InsertSourceHandler,
                @Override
                public void onResponseReceived(SourceDocument document)
                {
+                  // if we are opening for a source navigation then we 
+                  // need to force Rmds into source mode
+                  if (openingForSourceNavigation_) 
+                  {
+                     document.getProperties()._setBoolean(
+                        TextEditingTarget.RMD_VISUAL_MODE, 
+                        false
+                     );
+                  }
+                  
                   dismissProgress.execute();
                   pMruList_.get().add(document.getPath());
                   EditingTarget target = addTab(document, OPEN_INTERACTIVE);
@@ -3616,7 +3726,7 @@ public class Source implements InsertSourceHandler,
       syncTabOrder();
 
       String[] ids = new String[editors_.size()];
-      ImageResource[] icons = new ImageResource[editors_.size()];
+      FileIcon[] icons = new FileIcon[editors_.size()];
       String[] names = new String[editors_.size()];
       String[] paths = new String[editors_.size()];
       for (int i = 0; i < ids.length; i++)
@@ -3662,7 +3772,18 @@ public class Source implements InsertSourceHandler,
             {
                public void execute()
                {
-                  if (activeEditor_ != null)
+                  // presume that we will give focus to the tab
+                  boolean focus = true;
+                  
+                  if (event instanceof DocTabSelectionEvent)
+                  {
+                     // however, if this event was generated from a doc tab
+                     // selection that did not have focus, don't steal focus
+                     DocTabSelectionEvent tabEvent = (DocTabSelectionEvent) event;
+                     focus = tabEvent.getFocus();
+                  }
+
+                  if (focus && activeEditor_ != null)
                      activeEditor_.focus();
                }
             });
@@ -3869,7 +3990,7 @@ public class Source implements InsertSourceHandler,
    private void manageRSConnectCommands()
    {
       boolean rsCommandsAvailable = 
-            SessionUtils.showPublishUi(session_, uiPrefs_) &&
+            SessionUtils.showPublishUi(session_, userState_) &&
             (activeEditor_ != null) &&
             (activeEditor_.getPath() != null) &&
             ((activeEditor_.getExtendedFileType() != null &&
@@ -3919,7 +4040,15 @@ public class Source implements InsertSourceHandler,
    
    
    private void manageSaveAllCommand()
-   {      
+   {
+      // if source windows are open, managing state of the command becomes
+      // complicated, so leave it enabled
+      if (windowManager_.areSourceWindowsOpen())
+      {
+         commands_.saveAllSourceDocs().setEnabled(true);
+         return;
+      }
+
       // if one document is dirty then we are enabled
       for (EditingTarget target : editors_)
       {
@@ -4096,9 +4225,22 @@ public class Source implements InsertSourceHandler,
    }
    
    @Handler
+   public void onSpeakEditorLocation()
+   {
+      String announcement;
+      if (activeEditor_ == null)
+         announcement = "No document tabs open";
+      else
+      {
+         announcement = activeEditor_.getCurrentStatus();
+      }
+      ariaLive_.announce(AriaLiveService.ON_DEMAND, announcement, Timing.IMMEDIATE, Severity.STATUS);
+   }
+   
+   @Handler
    public void onZoomIn()
    {
-      if (Desktop.isDesktop())
+      if (Desktop.hasDesktopFrame())
       {
          Desktop.getFrame().zoomIn();
       }
@@ -4107,7 +4249,7 @@ public class Source implements InsertSourceHandler,
    @Handler
    public void onZoomOut()
    {
-      if (Desktop.isDesktop())
+      if (Desktop.hasDesktopFrame())
       {
          Desktop.getFrame().zoomOut();
       }
@@ -4116,7 +4258,7 @@ public class Source implements InsertSourceHandler,
    @Handler
    public void onZoomActualSize()
    {
-      if (Desktop.isDesktop())
+      if (Desktop.hasDesktopFrame())
       {
          Desktop.getFrame().zoomActualSize();
       }
@@ -4782,10 +4924,14 @@ public class Source implements InsertSourceHandler,
          EditingTarget target = activeEditor_;
          if (target != null && target instanceof TextEditingTarget)
          {
-            getEditorContext(
-                  target.getId(),
-                  target.getPath(),
-                  ((TextEditingTarget) target).getDocDisplay());
+            TextEditingTarget editingTarget = (TextEditingTarget)target;
+            editingTarget.ensureTextEditorActive(() -> {
+               getEditorContext(
+                  editingTarget.getId(),
+                  editingTarget.getPath(),
+                  editingTarget.getDocDisplay()
+               );
+            });
             return;
          }
       }
@@ -4872,10 +5018,12 @@ public class Source implements InsertSourceHandler,
    private final RemoteFileSystemContext fileContext_;
    private final TextEditingTargetRMarkdownHelper rmarkdown_;
    private final EventBus events_;
+   private final AriaLiveService ariaLive_;
    private final Session session_;
    private final Synctex synctex_;
    private final Provider<FileMRUList> pMruList_;
-   private final UIPrefs uiPrefs_;
+   private final UserPrefs userPrefs_;
+   private final UserState userState_;
    private final ConsoleEditorProvider consoleEditorProvider_;
    private final RnwWeaveRegistry rnwWeaveRegistry_;
    private HashSet<AppCommand> activeCommands_ = new HashSet<AppCommand>();
@@ -4891,6 +5039,7 @@ public class Source implements InsertSourceHandler,
    private static final String KEY_ACTIVETAB = "activeTab";
    private boolean initialized_;
    private Timer debugSelectionTimer_ = null;
+   private boolean openingForSourceNavigation_ = false;
    
    private final SourceWindowManager windowManager_;
 

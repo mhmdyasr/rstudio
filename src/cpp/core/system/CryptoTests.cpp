@@ -1,7 +1,7 @@
 /*
  * CryptoTests.cpp
  *
- * Copyright (C) 2017 by RStudio, Inc.
+ * Copyright (C) 2017 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -24,7 +24,7 @@ namespace core {
 namespace system {
 namespace tests {
 
-context("CryptoTests")
+test_context("CryptoTests")
 {
    test_that("Can AES encrypt/decrypt")
    {

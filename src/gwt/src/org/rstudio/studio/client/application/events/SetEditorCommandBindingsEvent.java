@@ -1,7 +1,7 @@
 /*
  * SetEditorCommandBindingsEvent.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -16,7 +16,7 @@ package org.rstudio.studio.client.application.events;
 
 import java.util.List;
 
-import org.rstudio.core.client.command.KeyboardShortcut.KeySequence;
+import org.rstudio.core.client.command.KeySequence;
 
 import com.google.gwt.event.shared.EventHandler;
 import com.google.gwt.event.shared.GwtEvent;
@@ -33,13 +33,13 @@ public class SetEditorCommandBindingsEvent extends GwtEvent<SetEditorCommandBind
       id_ = id;
       keys_ = keys;
    }
-   
+
    public String getId() { return id_; }
    public List<KeySequence> getKeySequences() { return keys_; }
-   
+
    private final String id_;
    private final List<KeySequence> keys_;
-   
+
    @Override
    public Type<Handler> getAssociatedType()
    {
@@ -52,5 +52,5 @@ public class SetEditorCommandBindingsEvent extends GwtEvent<SetEditorCommandBind
       handler.onSetEditorCommandBindings(this);
    }
 
-   public static final Type<Handler> TYPE = new Type<Handler>();
+   public static final Type<Handler> TYPE = new Type<>();
 }

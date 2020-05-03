@@ -1,7 +1,7 @@
 /*
  * LocatorPanel.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -84,7 +84,7 @@ public class LocatorPanel extends LayoutPanel
    public void showLocator(Plots.Parent parent)
    {
       // set parent 
-      parent_ = parent ;
+      parent_ = parent;
       
       // add to parent
       parent_.add(this);

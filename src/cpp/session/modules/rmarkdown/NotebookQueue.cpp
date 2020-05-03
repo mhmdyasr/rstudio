@@ -1,7 +1,7 @@
 /*
  * NotebookQueue.cpp
  *
- * Copyright (C) 2009-16 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -29,8 +29,6 @@
 #include "NotebookCache.hpp"
 #include "NotebookAlternateEngines.hpp"
 #include "NotebookChunkOptions.hpp"
-
-#include <boost/foreach.hpp>
 
 #include <r/RCntxtUtils.hpp>
 #include <r/RInterface.hpp>
@@ -87,7 +85,7 @@ public:
       pInput_->enque(kThreadQuitCommand);
 
       // unregister handlers
-      BOOST_FOREACH(RSTUDIO_BOOST_CONNECTION& connection, handlers_)
+      for (RSTUDIO_BOOST_CONNECTION& connection : handlers_)
       {
          connection.disconnect();
       }
@@ -183,7 +181,7 @@ public:
       const std::string& before)
    {
       // find the document queue corresponding to this unit
-      BOOST_FOREACH(const boost::shared_ptr<NotebookDocQueue> queue, queue_)
+      for (const boost::shared_ptr<NotebookDocQueue> queue : queue_)
       {
          if (queue->docId() == pUnit->docId())
          {
@@ -214,7 +212,7 @@ public:
 
    json::Value getDocQueue(const std::string& docId)
    {
-      BOOST_FOREACH(boost::shared_ptr<NotebookDocQueue> pQueue, queue_)
+      for (boost::shared_ptr<NotebookDocQueue> pQueue : queue_)
       {
          if (pQueue->docId() == docId)
             return pQueue->toJson();
@@ -262,8 +260,7 @@ private:
       {
          // get the chunk label to see if this is the setup chunk 
          std::string label;
-         json::readObject(execContext_->options().chunkOptions(), "label", 
-               &label);
+         json::readObject(execContext_->options().chunkOptions(), "label", label);
          if (label == "setup")
             saveSetupContext();
       }
@@ -291,7 +288,7 @@ private:
       else 
       {
          // send code to console 
-         sendConsoleInput(execUnit_->chunkId(), code);
+         sendConsoleInput(execUnit_->chunkId(), json::Value(code));
 
          // let client know the range has been sent to R
          json::Object exec;
@@ -316,14 +313,12 @@ private:
 
       // formulate request body
       json::Object rpc;
-      rpc["method"] = "console_input";
+      rpc["method"] = json::Value("console_input");
       rpc["params"] = arr;
-      rpc["clientId"] = clientEventService().clientId();
+      rpc["clientId"] = json::Value(clientEventService().clientId());
 
       // serialize RPC body and send it to helper thread for submission
-      std::ostringstream oss;
-      json::write(rpc, oss);
-      pInput_->enque(oss.str());
+      pInput_->enque(rpc.write());
    }
 
    Error executeNextUnit(ExpressionMode mode)
@@ -374,7 +369,7 @@ private:
       // if this is the setup chunk, prepare for its execution by switching
       // knitr chunk defaults
       std::string label;
-      json::readObject(chunkOptions, "label", &label);
+      json::readObject(chunkOptions, "label", label);
       if (label == "setup")
          prepareSetupContext();
 
@@ -426,7 +421,7 @@ private:
             if (optionsError)
             {
                 execContext_->onConsoleOutput(module_context::ConsoleOutputError,
-                                              optionsError.summary());
+                                              optionsError.getSummary());
             }
          }
          execUnit_ = unit;
@@ -494,8 +489,20 @@ private:
          core::http::Response response;
          Error error = session::http::sendSessionRequest(
                "/rpc/console_input", input, &response);
+
          if (error)
             LOG_ERROR(error);
+         else
+         {
+            // log warning if the response was not successful
+            if (response.statusCode() != core::http::status::Ok)
+            {
+               std::stringstream oss;
+               oss << "Received unexpected response when submitting console input: "
+                   << response; 
+               LOG_WARNING_MESSAGE(oss.str());
+            }
+         }
       }
    }
 
@@ -584,15 +591,15 @@ private:
       {
          json::Value externals;
          r::json::jsonValueFromList(resultSEXP, &externals);
-         if (externals.type() == json::ObjectType)
+         if (externals.isObject())
          {
             error = setChunkValue(docPath, execContext_->docId(), 
-                  kChunkExternals, externals.get_obj());
+                  kChunkExternals, externals.getObject());
             if (error)
                LOG_ERROR(error);
 
             if (!queue_.empty())
-               queue_.front()->setExternalChunks(externals.get_obj());
+               queue_.front()->setExternalChunks(externals.getObject());
          }
       }
 
@@ -638,17 +645,17 @@ private:
       {
          json::Value defaults;
          r::json::jsonValueFromList(resultSEXP, &defaults);
-         if (defaults.type() == json::ObjectType)
+         if (defaults.isObject())
          {
             // write default chunk options to cache
             Error error = setChunkValue(docPath, execContext_->docId(), 
-                  kChunkDefaultOptions, defaults.get_obj());
+                  kChunkDefaultOptions, defaults.getObject());
             if (error)
                LOG_ERROR(error);
 
             // update running queue if present
             if (!queue_.empty())
-               queue_.front()->setDefaultChunkOptions(defaults.get_obj());
+               queue_.front()->setDefaultChunkOptions(defaults.getObject());
          }
       }
    }

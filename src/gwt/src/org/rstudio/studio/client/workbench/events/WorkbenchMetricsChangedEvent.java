@@ -1,7 +1,7 @@
 /*
  * WorkbenchMetricsChangedEvent.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -25,12 +25,12 @@ public class WorkbenchMetricsChangedEvent extends
    
    public WorkbenchMetricsChangedEvent(WorkbenchMetrics clientMetrics)
    {
-      clientMetrics_ = clientMetrics ;
+      clientMetrics_ = clientMetrics;
    }
    
    public WorkbenchMetrics getWorkbenchMetrics()
    {
-      return clientMetrics_ ;
+      return clientMetrics_;
    }
    
    @Override
@@ -45,5 +45,5 @@ public class WorkbenchMetricsChangedEvent extends
       return TYPE;
    }
    
-   private final WorkbenchMetrics clientMetrics_ ;
+   private final WorkbenchMetrics clientMetrics_;
 }

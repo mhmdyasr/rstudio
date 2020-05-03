@@ -1,7 +1,7 @@
 /*
  * FileTypeRegistry.java
  *
- * Copyright (C) 2009-17 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -43,8 +43,8 @@ public class FileTypeRegistry
    private static final FileIconResources ICONS = FileIconResources.INSTANCE;
 
    public static final TextFileType TEXT =
-         new TextFileType("text", "Text File", EditorLanguage.LANG_PLAIN, "",
-                          new ImageResource2x(ICONS.iconText2x()),
+         new TextFileType("text", FileIcon.TEXT_ICON.getDescription(), EditorLanguage.LANG_PLAIN, "",
+                          FileIcon.TEXT_ICON.getImageResource(),
                           true,
                           false, false, false, false, false, false, false, false, false, true, false, false);
 
@@ -68,15 +68,15 @@ public class FileTypeRegistry
          new TextFileType("dcf", "DCF", EditorLanguage.LANG_DCF, ".dcf",
                           new ImageResource2x(ICONS.iconDCF2x()), false, false, false, false, false,
                           false, false, false, false, false, false, false, false);
-   
+
    public static final TextFileType INI =
          new TextFileType("ini", "INI", EditorLanguage.LANG_INI, ".ini",
                           new ImageResource2x(ICONS.iconDCF2x()), false, false, false, false, false,
                           false, false, false, false, false, false, false, false);
-   
-   
+
+
    public static final TextFileType STAN = new StanFileType();
-   
+
    public static final TextFileType MERMAID = new MermaidFileType();
    public static final TextFileType GRAPHVIZ = new GraphvizFileType();
 
@@ -102,7 +102,7 @@ public class FileTypeRegistry
    public static final RWebContentFileType RMARKDOWN =
          new RWebContentFileType("r_markdown", "R Markdown", EditorLanguage.LANG_RMARKDOWN,
                               ".Rmd", new ImageResource2x(ICONS.iconRmarkdown2x()), true);
-   
+
    public static final RWebContentFileType RNOTEBOOK =
          new RWebContentFileType("r_notebook", "R Notebook", EditorLanguage.LANG_RMARKDOWN,
                                  ".nb.html", new ImageResource2x(ICONS.iconRnotebook2x()), true);
@@ -145,13 +145,13 @@ public class FileTypeRegistry
                           new ImageResource2x(ICONS.iconJavascript2x()),
                           true,
                           true, false, false, false, false, false, false, false, false, false, false, false);
-   
+
    public static final TextFileType JSON =
          new TextFileType("json", "JSON", EditorLanguage.LANG_JAVASCRIPT, ".json",
                           new ImageResource2x(ICONS.iconJavascript2x()),
                           true,
                           false, false, false, false, false, false, false, false, false, false, false, false);
-   
+
 
    public static final TextFileType PYTHON =
          new PythonFileType("python", "Python", EditorLanguage.LANG_PYTHON, ".py", new ImageResource2x(ICONS.iconPython2x()));
@@ -164,123 +164,123 @@ public class FileTypeRegistry
    public static final TextFileType SH = new ScriptFileType(
          "sh", "Shell", EditorLanguage.LANG_SH, ".sh", new ImageResource2x(ICONS.iconSh2x()),
          null, true, false);
-   
+
    public static final TextFileType TOML =
          new TextFileType("toml", "TOML", EditorLanguage.LANG_TOML, ".toml",
                           new ImageResource2x(ICONS.iconToml2x()), false, false, false, false, false,
                           false, false, false, false, false, false, false, false);
-   
+
    public static final TextFileType YAML =
          new TextFileType("yaml", "YAML", EditorLanguage.LANG_YAML, ".yml",
                           new ImageResource2x(ICONS.iconYaml2x()), false, false, false, false, false,
                           false, false, false, false, false, false, false, false);
-   
+
    public static final TextFileType XML =
          new TextFileType("xml", "XML", EditorLanguage.LANG_XML, ".xml",
                           new ImageResource2x(ICONS.iconXml2x()), false, false, false, false, false,
                           false, false, false, false, false, false, false, false);
-   
+
    public static final TextFileType H = new CppFileType("h", ".h", new ImageResource2x(ICONS.iconH2x()), true, false);
    public static final TextFileType C = new CppFileType("c", ".c", new ImageResource2x(ICONS.iconC2x()), false, false);
    public static final TextFileType HPP = new CppFileType("hpp", ".hpp", new ImageResource2x(ICONS.iconHpp2x()), true, false);
    public static final TextFileType CPP = new CppFileType("cpp", ".cpp", new ImageResource2x(ICONS.iconCpp2x()), true, true);
-   
-   public static final TextFileType CLOJURE = 
+
+   public static final TextFileType CLOJURE =
          new TextFileType("clojure", "Clojure", EditorLanguage.LANG_CLOJURE, ".clj", new ImageResource2x(ICONS.iconClojure2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType COFFEE = 
+
+   public static final TextFileType COFFEE =
          new TextFileType("coffee", "Coffee", EditorLanguage.LANG_COFFEE, ".coffee", new ImageResource2x(ICONS.iconCoffee2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType CSHARP = 
+
+   public static final TextFileType CSHARP =
          new TextFileType("csharp", "C#", EditorLanguage.LANG_CSHARP, ".cs", new ImageResource2x(ICONS.iconCsharp2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   
-   public static final TextFileType GITIGNORE = 
+
+
+   public static final TextFileType GITIGNORE =
          new TextFileType("gitignore", "Gitignore", EditorLanguage.LANG_GITIGNORE, ".gitignore", new ImageResource2x(ICONS.iconGitignore2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType GO = 
+
+   public static final TextFileType GO =
          new TextFileType("go", "Go", EditorLanguage.LANG_GO, ".go", new ImageResource2x(ICONS.iconGo2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType GROOVY = 
+
+   public static final TextFileType GROOVY =
          new TextFileType("groovy", "Groovy", EditorLanguage.LANG_GROOVY, ".groovy", new ImageResource2x(ICONS.iconGroovy2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType HASKELL = 
+
+   public static final TextFileType HASKELL =
          new TextFileType("haskell", "Haskell", EditorLanguage.LANG_HASKELL, ".haskell", new ImageResource2x(ICONS.iconHaskell2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType HAXE = 
+
+   public static final TextFileType HAXE =
          new TextFileType("haxe", "Haxe", EditorLanguage.LANG_HAXE, ".haxe", new ImageResource2x(ICONS.iconHaxe2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType JAVA = 
+
+   public static final TextFileType JAVA =
          new TextFileType("java", "Java", EditorLanguage.LANG_JAVA, ".java", new ImageResource2x(ICONS.iconJava2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType JULIA = 
+
+   public static final TextFileType JULIA =
          new TextFileType("julia", "Julia", EditorLanguage.LANG_JULIA, ".julia", new ImageResource2x(ICONS.iconJulia2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType LISP = 
+
+   public static final TextFileType LISP =
          new TextFileType("lisp", "Lisp", EditorLanguage.LANG_LISP, ".lisp", new ImageResource2x(ICONS.iconLisp2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType LUA = 
+
+   public static final TextFileType LUA =
          new TextFileType("lua", "Lua", EditorLanguage.LANG_LUA, ".lua", new ImageResource2x(ICONS.iconLua2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType MAKEFILE = 
+
+   public static final TextFileType MAKEFILE =
          new TextFileType("makefile", "Makefile", EditorLanguage.LANG_MAKEFILE, ".makefile", new ImageResource2x(ICONS.iconMakefile2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType MATLAB = 
+
+   public static final TextFileType MATLAB =
          new TextFileType("matlab", "Matlab", EditorLanguage.LANG_MATLAB, ".m", new ImageResource2x(ICONS.iconMatlab2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType PERL = 
+
+   public static final TextFileType PERL =
          new TextFileType("perl", "Perl", EditorLanguage.LANG_PERL, ".pl", new ImageResource2x(ICONS.iconPerl2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType RUBY = 
+
+   public static final TextFileType RUBY =
          new TextFileType("ruby", "Ruby", EditorLanguage.LANG_RUBY, ".rb", new ImageResource2x(ICONS.iconRuby2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType RUST = 
+
+   public static final TextFileType RUST =
          new TextFileType("rust", "Rust", EditorLanguage.LANG_RUST, ".rs", new ImageResource2x(ICONS.iconRust2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
-   public static final TextFileType SCALA = 
+
+   public static final TextFileType SCALA =
          new TextFileType("scala", "Scala", EditorLanguage.LANG_SCALA, ".scala", new ImageResource2x(ICONS.iconScala2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
+
    public static final TextFileType SNIPPETS =
          new TextFileType("snippets", "Snippets", EditorLanguage.LANG_SNIPPETS, ".snippets", new ImageResource2x(ICONS.iconSnippets2x()),
                false, false, false, false, false,
                false, false, false, false, false, false, false, false);
-   
+
    public static final RDataType RDATA = new RDataType();
    public static final RDSDataType RDS = new RDSDataType();
    public static final RProjectType RPROJECT = new RProjectType();
@@ -346,6 +346,9 @@ public class FileTypeRegistry
       register("cleanup", SH, new ImageResource2x(icons.iconSh2x()));
       register("cleanup.win", SH, new ImageResource2x(icons.iconSh2x()));
       register("Makefile", MAKEFILE, new ImageResource2x(icons.iconMakefile2x()));
+      register("GNUmakefile", MAKEFILE, new ImageResource2x(icons.iconMakefile2x()));
+      register("makefile", MAKEFILE, new ImageResource2x(icons.iconMakefile2x()));
+      register("*.make", MAKEFILE, new ImageResource2x(icons.iconMakefile2x()));
       register("Makefile.in", MAKEFILE, new ImageResource2x(icons.iconMakefile2x()));
       register("Makefile.win", MAKEFILE, new ImageResource2x(icons.iconMakefile2x()));
       register("Makevars", MAKEFILE, new ImageResource2x(icons.iconMakefile2x()));
@@ -408,7 +411,7 @@ public class FileTypeRegistry
       register("*.yaml", YAML, new ImageResource2x(icons.iconYaml2x()));
       register("*.xml", XML, new ImageResource2x(icons.iconXml2x()));
       register("*.stan", STAN, new ImageResource2x(icons.iconStan2x()));
-      
+
       register("*.clj", CLOJURE, new ImageResource2x(icons.iconClojure2x()));
       register("*.cloj", CLOJURE, new ImageResource2x(icons.iconClojure2x()));
       register("*.clojure", CLOJURE, new ImageResource2x(icons.iconClojure2x()));
@@ -433,18 +436,18 @@ public class FileTypeRegistry
       register("*.snippets", SNIPPETS, new ImageResource2x(icons.iconSnippets2x()));
       register("*.Rprofvis", PROFILER, new ImageResource2x(icons.iconRprofile2x()));
 
-      registerIcon(".jpg", new ImageResource2x(icons.iconPng2x()));
-      registerIcon(".jpeg", new ImageResource2x(icons.iconPng2x()));
-      registerIcon(".gif", new ImageResource2x(icons.iconPng2x()));
-      registerIcon(".bmp", new ImageResource2x(icons.iconPng2x()));
-      registerIcon(".tiff", new ImageResource2x(icons.iconPng2x()));
-      registerIcon(".tif", new ImageResource2x(icons.iconPng2x()));
-      registerIcon(".png", new ImageResource2x(icons.iconPng2x()));
+      registerIcon(".jpg", new FileIcon(new ImageResource2x(icons.iconPng2x()), "JPG"));
+      registerIcon(".jpeg", new FileIcon(new ImageResource2x(icons.iconPng2x()), "JPEG"));
+      registerIcon(".gif", new FileIcon(new ImageResource2x(icons.iconPng2x()), "GIF"));
+      registerIcon(".bmp", new FileIcon(new ImageResource2x(icons.iconPng2x()), "BMP"));
+      registerIcon(".tiff", new FileIcon(new ImageResource2x(icons.iconPng2x()), "TIFF"));
+      registerIcon(".tif", new FileIcon(new ImageResource2x(icons.iconPng2x()), "TIF"));
+      registerIcon(".png", new FileIcon(new ImageResource2x(icons.iconPng2x()), "PNG"));
 
-      registerIcon(".pdf", new ImageResource2x(icons.iconPdf2x()));
-      registerIcon(".csv", new ImageResource2x(icons.iconCsv2x()));
-      registerIcon(".docx", new ImageResource2x(icons.iconWord2x()));
-      registerIcon(".pptx", new ImageResource2x(icons.iconPowerpoint2x()));
+      registerIcon(".pdf", FileIcon.PDF_ICON);
+      registerIcon(".csv", FileIcon.CSV_ICON);
+      registerIcon(".docx", new FileIcon(new ImageResource2x(icons.iconWord2x()), "DOCX"));
+      registerIcon(".pptx", new FileIcon(new ImageResource2x(icons.iconPowerpoint2x()), "PPTX"));
 
       for (FileType fileType : FileType.ALL_FILE_TYPES)
       {
@@ -527,7 +530,7 @@ public class FileTypeRegistry
    {
       // edit the file in the main window unless this is a source satellite
       // (in which case we want to edit it locally)
-      if (Satellite.isCurrentWindowSatellite() && 
+      if (Satellite.isCurrentWindowSatellite() &&
           !satellite_.getSatelliteName().startsWith(SourceSatellite.NAME_PREFIX))
       {
          satellite_.focusMainWindow();
@@ -537,7 +540,7 @@ public class FileTypeRegistry
       {
          FileType fileType = getTypeForFile(file);
          if (fileType != null
-            && !(fileType instanceof TextFileType) 
+            && !(fileType instanceof TextFileType)
             && !(fileType instanceof ProfilerType))
          {
             fileType = TEXT;
@@ -633,22 +636,22 @@ public class FileTypeRegistry
          return TEXT;
    }
 
-   public ImageResource getIconForFile(FileSystemItem file)
+   public FileIcon getIconForFile(FileSystemItem file)
    {
       if (file.isDirectory())
       {
          if (file.isPublicFolder())
-            return new ImageResource2x(ICONS.iconPublicFolder2x());
+            return FileIcon.PUBLIC_FOLDER_ICON;
          else
-            return new ImageResource2x(ICONS.iconFolder2x());
+            return FileIcon.FOLDER_ICON;
       }
 
       return getIconForFilename(file.getName());
    }
 
-   public ImageResource getIconForFilename(String filename)
+   public FileIcon getIconForFilename(String filename)
    {
-      ImageResource icon = iconsByFilename_.get(filename.toLowerCase());
+      FileIcon icon = iconsByFilename_.get(filename.toLowerCase());
       if (icon != null)
          return icon;
       String ext = FileSystemItem.getExtensionFromPath(filename);
@@ -656,7 +659,7 @@ public class FileTypeRegistry
       if (icon != null)
          return icon;
 
-      return new ImageResource2x(ICONS.iconText2x());
+      return TEXT.getDefaultFileIcon();
    }
 
    private void register(String filespec, FileType fileType, ImageResource icon)
@@ -665,42 +668,50 @@ public class FileTypeRegistry
       {
          String ext = filespec.substring(1).toLowerCase();
          if (ext.equals("."))
+         {
             ext = "";
-         fileTypesByFileExtension_.put(ext,
-                                       fileType);
+         }
+         fileTypesByFileExtension_.put(ext, fileType);
          if (icon != null)
-            iconsByFileExtension_.put(ext, icon);
+         {
+            iconsByFileExtension_.put(
+                  ext,
+                  new FileIcon(icon, fileType.getDefaultFileIcon().getDescription()));
+         }
       }
       else if (filespec.length() == 0)
       {
          fileTypesByFileExtension_.put("", fileType);
          if (icon != null)
-            iconsByFileExtension_.put("", icon);
+         {
+            iconsByFileExtension_.put(
+                  "",
+                  new FileIcon(icon, fileType.getDefaultFileIcon().getDescription()));
+         }
       }
       else
       {
          assert filespec.indexOf("*") < 0 : "Unexpected filespec format";
          fileTypesByFilename_.put(filespec.toLowerCase(), fileType);
          if (icon != null)
-            iconsByFilename_.put(filespec.toLowerCase(), icon);
+         {
+            iconsByFilename_.put(filespec.toLowerCase(),
+                  new FileIcon(icon,
+                        fileType.getDefaultFileIcon().getDescription()));
+         }
       }
    }
 
-   private void registerIcon(String extension, ImageResource icon)
+   private void registerIcon(String extension, FileIcon icon)
    {
       iconsByFileExtension_.put(extension, icon);
    }
 
-   private final HashMap<String, FileType> fileTypesByFileExtension_ =
-         new HashMap<String, FileType>();
-   private final HashMap<String, FileType> fileTypesByFilename_ =
-         new HashMap<String, FileType>();
-   private final HashMap<String, FileType> fileTypesByTypeName_ =
-         new HashMap<String, FileType>();
-   private final HashMap<String, ImageResource> iconsByFileExtension_ =
-         new HashMap<String, ImageResource>();
-   private final HashMap<String, ImageResource> iconsByFilename_ =
-         new HashMap<String, ImageResource>();
+   private final HashMap<String, FileType> fileTypesByFileExtension_ = new HashMap<>();
+   private final HashMap<String, FileType> fileTypesByFilename_ = new HashMap<>();
+   private final HashMap<String, FileType> fileTypesByTypeName_ = new HashMap<>();
+   private final HashMap<String, FileIcon> iconsByFileExtension_ = new HashMap<>();
+   private final HashMap<String, FileIcon> iconsByFilename_ = new HashMap<>();
    private final EventBus eventBus_;
    private final Satellite satellite_;
    private final Session session_;

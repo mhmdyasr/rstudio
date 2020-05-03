@@ -1,7 +1,7 @@
 /*
  * FindReplaceBar.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -14,6 +14,7 @@
  */
 package org.rstudio.studio.client.workbench.views.source.editors.text.findreplace;
 
+import com.google.gwt.aria.client.Roles;
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.event.dom.client.*;
 import com.google.gwt.resources.client.ClientBundle;
@@ -27,6 +28,7 @@ import org.rstudio.core.client.resources.ImageResource2x;
 import org.rstudio.core.client.theme.res.ThemeResources;
 import org.rstudio.core.client.theme.res.ThemeStyles;
 import org.rstudio.core.client.widget.CheckboxLabel;
+import org.rstudio.core.client.widget.DecorativeImage;
 import org.rstudio.core.client.widget.FindTextBox;
 import org.rstudio.core.client.widget.SmallButton;
 import org.rstudio.studio.client.RStudioGinjector;
@@ -58,7 +60,17 @@ public class FindReplaceBar extends Composite implements Display, RequiresResize
       String closeButton();
    }
    
-   public FindReplaceBar(boolean showReplace, final boolean defaultForward)
+   public FindReplaceBar(boolean showReplace, boolean defaultForward)
+   {
+      this(true, showReplace, true, true, defaultForward);
+   }
+   
+   
+   public FindReplaceBar(boolean showFindAll,
+                         boolean showReplace, 
+                         boolean showInSelection,
+                         boolean showWholeWord,
+                         final boolean defaultForward)
    {
       defaultForward_ = defaultForward;
       
@@ -84,6 +96,7 @@ public class FindReplaceBar extends Composite implements Display, RequiresResize
       txtReplace_.addStyleName(RES.styles().replaceTextBox());
       findReplacePanel.add(btnReplace_ = new SmallButton(cmds.replaceAndFind()));
       findReplacePanel.add(btnReplaceAll_ = new SmallButton("All"));
+      btnReplaceAll_.setTitle("Replace all occurrences");
       
       panel.add(findReplacePanel);
       
@@ -124,32 +137,15 @@ public class FindReplaceBar extends Composite implements Display, RequiresResize
       panel.add(optionsPanel);
       
       shelf.addLeftWidget(panel);
-      
-      // fixup tab indexes of controls
-      txtFind_.setTabIndex(100);
-      txtReplace_.setTabIndex(101);
-      chkInSelection_.setTabIndex(102);
-      chkCaseSensitive_.setTabIndex(103);
-      chkWholeWord_.setTabIndex(104);
-      chkRegEx_.setTabIndex(105);
-      chkWrapSearch_.setTabIndex(106);
-      
-      // remove SmallButton instances from tab order since (a) they aren't
-      // capable of showing a focused state; and (b) enter is already a
-      // keyboard shortcut for both find and replace
-      btnFindNext_.setTabIndex(-1);
-      btnFindPrev_.setTabIndex(-1);
-      btnSelectAll_.setTabIndex(-1);
-      btnReplace_.setTabIndex(-1);
-      btnReplaceAll_.setTabIndex(-1);
-     
+
       shelf.setRightVerticalAlignment(HasVerticalAlignment.ALIGN_TOP);
       shelf.addRightWidget(btnClose_ = new Button());
       btnClose_.setStyleName(RES.styles().closeButton());
       btnClose_.addStyleName(ThemeStyles.INSTANCE.closeTabButton());
       btnClose_.addStyleName(ThemeStyles.INSTANCE.handCursor());
+      Roles.getButtonRole().setAriaLabelProperty(btnClose_.getElement(), "Close find and replace");
       btnClose_.getElement().appendChild(
-            new Image(new ImageResource2x(ThemeResources.INSTANCE.closeTab2x())).getElement());
+            new DecorativeImage(new ImageResource2x(ThemeResources.INSTANCE.closeTab2x())).getElement());
 
       txtFind_.addKeyDownHandler(new KeyDownHandler()
       {
@@ -200,11 +196,28 @@ public class FindReplaceBar extends Composite implements Display, RequiresResize
          }
       });
       
+      if (!showFindAll)
+      {
+         btnSelectAll_.setVisible(false);
+      }
+      
       if (!showReplace)
       {
          txtReplace_.setVisible(false);
          btnReplace_.setVisible(false);
          btnReplaceAll_.setVisible(false);
+      }
+      
+      if (!showInSelection)
+      {
+         inSelectionLabel.setVisible(false);
+         chkInSelection_.setVisible(false);
+      }
+      
+      if (!showWholeWord)
+      {
+         wholeWordLabel.setVisible(false);
+         chkWholeWord_.setVisible(false);
       }
 
       initWidget(shelf);
@@ -220,6 +233,12 @@ public class FindReplaceBar extends Composite implements Display, RequiresResize
    public void addFindKeyUpHandler(KeyUpHandler keyUpHandler)
    {
       txtFind_.addKeyUpHandler(keyUpHandler);
+   }
+   
+   public void addTextBoxFocusHandler(FocusHandler handler)
+   {
+      txtFind_.addFocusHandler(handler);
+      txtReplace_.addFocusHandler(handler);
    }
 
    public HasValue<String> getReplaceValue()

@@ -1,7 +1,7 @@
 /*
  * SecureCookie.hpp
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-18 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -42,10 +42,13 @@ http::Cookie createSecureCookie(const std::string& name,
                                 const core::http::Request& request,
                                 const boost::posix_time::time_duration& validDuration,
                                 const std::string& path,
-                                bool secure);
+                                bool secure,
+                                bool iFrameEmbedding,
+                                bool legacyCookies);
 
 std::string readSecureCookie(const core::http::Request& request,
-                             const std::string& name);
+                             const std::string& name,
+                             bool iFrameLegacyCookies);
 
 std::string readSecureCookie(const std::string& signedCookieValue);
 
@@ -57,7 +60,10 @@ void set(const std::string& name,
          const boost::posix_time::time_duration& validDuration,
          const std::string& path,
          http::Response* pResponse,
-         bool secure);
+         bool secure,
+         bool iFrameEmbedding,
+         bool legacyCookies,
+         bool iFrameLegacyCookies);
 
 void set(const std::string& name,
          const std::string& value,
@@ -66,12 +72,31 @@ void set(const std::string& name,
          const boost::optional<boost::gregorian::days>& cookieExpiresDays,
          const std::string& path,
          http::Response* pResponse,
-         bool secure);
+         bool secure,
+         bool iFrameEmbedding,
+         bool legacyCookies,
+         bool iFrameLegacyCookies);
+
+void set(const std::string& name,
+         const std::string& value,
+         const http::Request& request,
+         const boost::posix_time::time_duration& validDuration,
+         const boost::optional<boost::posix_time::time_duration>& expiresFromNow,
+         const std::string& path,
+         http::Response* pResponse,
+         bool secure,
+         bool iFrameEmbedding,
+         bool legacyCookies,
+         bool iFrameLegacyCookies);
 
 void remove(const http::Request& request,
             const std::string& name,
             const std::string& path,
-            core::http::Response* pResponse);
+            core::http::Response* pResponse,
+            bool secure,
+            bool iFrameEmbedding,
+            bool legacyCookies,
+            bool iFrameLegacyCookies);
 
 // initialize with default secure cookie key file
 core::Error initialize();

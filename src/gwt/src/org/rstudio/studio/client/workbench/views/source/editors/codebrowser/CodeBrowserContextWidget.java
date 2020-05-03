@@ -1,7 +1,7 @@
 /*
  * CodeBrowserContextWidget.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -67,10 +67,10 @@ public class CodeBrowserContextWidget extends Composite
                      public void execute()
                      {
                         SelectionEvent.fire(CodeBrowserContextWidget.this, 
-                                            method) ;   
+                                            method);
                      }
                   });
-                  mi.getElement().getStyle().setPaddingRight(20, Unit.PX);                  
+                  mi.getElement().getStyle().setPaddingRight(20, Unit.PX);
                   menu.addItem(mi);
                }
                
@@ -113,7 +113,7 @@ public class CodeBrowserContextWidget extends Composite
    @Override
    public void fireEvent(GwtEvent<?> event)
    {
-      handlers_.fireEvent(event) ;
+      handlers_.fireEvent(event);
    }
    
    public void setCurrentFunction(SearchPathFunctionDefinition functionDef)

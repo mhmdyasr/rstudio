@@ -1,7 +1,7 @@
 /*
  * markdown_highlight_rules.js
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * The Initial Developer of the Original Code is
  * Ajax.org B.V.
@@ -125,13 +125,14 @@ var MarkdownHighlightRules = function() {
     };
 
     var linkByUrl = {
-        token : ["text", "keyword", "text", "markup.href", "string", "text"],
+        token : ["text", "keyword", "text", "markup.href", "string", "text", "paren.keyword.operator", "nospell", "paren.keyword.operator"],
         regex : "(\\s*\\[)(" +                            // [
             escaped("]") +                                // link text
             ")(\\]\\()" +                                 // ](
             '((?:[^\\)\\s\\\\]|\\\\.|\\s(?=[^"]))*)' +    // href
             '(\\s*"' +  escaped('"') + '"\\s*)?' +        // "title"
-            "(\\))"                                       // )
+            "(\\))" +                                     // )
+            "(?:(\\s*{)((?:[^\\}]+))(\\s*}))?"            // { block text }
     };
 
     var urlLink = {
@@ -227,13 +228,16 @@ var MarkdownHighlightRules = function() {
             linkByReference,
            { // HR *
             token : "constant",
-            regex : "^[ ]{0,2}(?:[ ]?\\*[ ]?){3,}\\s*$"
+            regex : "^\\s*[*](?:\\s*[*]){2,}\\s*$",
+            next  : "allowBlock",
         }, { // HR -
             token : "constant",
-            regex : "^[ ]{0,2}(?:[ ]?\\-[ ]?){3,}\\s*$"
+            regex : "^\\s*[-](?:\\s*[-]){2,}\\s*$",
+            next  : "allowBlock",
         }, { // HR _
             token : "constant",
-            regex : "^[ ]{0,2}(?:[ ]?\\_[ ]?){3,}\\s*$"
+            regex : "^\\s*[_](?:\\s*[_]){2,}\\s*$",
+            next  : "allowBlock"
         }, { // MathJax native display \[ ... \]
             token : "latex.markup.list.string.begin",
             regex : "\\\\\\[",
@@ -277,10 +281,6 @@ var MarkdownHighlightRules = function() {
         }, {
             token : "text",
             regex : "\\\\"
-        }, { // HR * - _
-            token : "constant",
-            regex : "^ {0,2}(?:(?: ?\\* ?){3,}|(?: ?\\- ?){3,}|(?: ?\\_ ?){3,})\\s*$",
-            next: "allowBlock"
         }, { // list
             token : "text",
             regex : "^\\s*(?:[*+-]|\\d+\\.)\\s+",

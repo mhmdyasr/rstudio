@@ -1,7 +1,7 @@
 /*
  * AsyncConnectionImpl.hpp
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -28,10 +28,11 @@
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/ip/tcp.hpp>
 
-#include <core/Error.hpp>
+#include <shared_core/Error.hpp>
 #include <core/Log.hpp>
 #include <core/Thread.hpp>
 
+#include <core/http/AsyncUriHandler.hpp>
 #include <core/http/Request.hpp>
 #include <core/http/Response.hpp>
 #include <core/http/SocketUtils.hpp>
@@ -102,17 +103,29 @@ public:
          boost::shared_ptr<AsyncConnectionImpl<SocketType> >,
          http::Request*)> Handler;
 
+    typedef boost::function<void(
+         boost::shared_ptr<AsyncConnectionImpl<SocketType>>)> ClosedHandler;
+
+   typedef boost::function<bool(
+         boost::shared_ptr<AsyncConnectionImpl<SocketType> >,
+         http::Request*)> HeadersParsedHandler;
+
 public:
    AsyncConnectionImpl(boost::asio::io_service& ioService,
                        boost::shared_ptr<boost::asio::ssl::context> sslContext,
-                       const Handler& handler,
+                       const HeadersParsedHandler& onHeadersParsed,
+                       const Handler& onRequestParsed,
+                       const ClosedHandler& onClosed,
                        const RequestFilter& requestFilter = RequestFilter(),
                        const ResponseFilter& responseFilter = ResponseFilter())
       : ioService_(ioService),
-        handler_(handler),
+        onHeadersParsed_(onHeadersParsed),
+        onRequestParsed_(onRequestParsed),
+        onClosed_(onClosed),
         requestFilter_(requestFilter),
         responseFilter_(responseFilter),
-        closed_(false)
+        closed_(false),
+        bytesTransferred_(0)
         
    {
       if (sslContext)
@@ -129,6 +142,17 @@ public:
       {
          socket_.reset(new SocketType(ioService));
          socketOperations_.reset(new SocketOperations<SocketType>(socket_));
+      }
+   }
+
+   virtual ~AsyncConnectionImpl()
+   {
+      try
+      {
+         close();
+      }
+      catch(...)
+      {
       }
    }
 
@@ -175,10 +199,11 @@ public:
          response_.setHeader("Date", util::httpDate());
       if (close)
          response_.setHeader("Connection", "close");
+      response_.setHeader("X-Content-Type-Options", "nosniff");
 
       // call the response filter if we have one
       if (responseFilter_)
-         responseFilter_(originalUri_, &response_);
+         responseFilter_(absoluteUri_, &response_);
 
       if (response_.isStreamResponse())
       {
@@ -214,9 +239,11 @@ public:
       }
    }
 
-   virtual void writeResponse(const http::Response& response, bool close = true)
+   virtual void writeResponse(const http::Response& response,
+                              bool close = true,
+                              const Headers& additionalHeaders = Headers())
    {
-      response_.assign(response);
+      response_.assign(response, additionalHeaders);
       writeResponse(close);
    }
 
@@ -264,7 +291,8 @@ public:
    {
       // ensure the socket is only closed once - boost considers
       // multiple closes an error, and this can lead to a segfault
-      LOCK_MUTEX(socketMutex_)
+      ClosedHandler closeHandler;
+      RECURSIVE_LOCK_MUTEX(mutex_)
       {
          if (!closed_)
          {
@@ -273,13 +301,71 @@ public:
                LOG_ERROR(error);
 
             closed_ = true;
+
+            // cleanup any associated data with the connection
+            connectionData_.clear();
          }
       }
       END_LOCK_MUTEX;
+
+      // notify that we have closed the connection
+      // we do this after giving up the mutex to prevent potential deadlock
+      try
+      {
+         if (closeHandler)
+            closeHandler(AsyncConnectionImpl<SocketType>::shared_from_this());
+      }
+      catch (const boost::bad_weak_ptr&)
+      {
+         // our instance is no longer valid
+         // this indicates a benign but potentially concerning error, so log it
+         LOG_WARNING_MESSAGE("Connection called close but no shared_ptr to it was around");
+      }
+   }
+
+   void setUploadHandler(const AsyncUriUploadHandlerFunction& handler)
+   {
+      FormHandler formHandler = boost::bind(handler,
+                                            AsyncConnectionImpl<SocketType>::shared_from_this(),
+                                            _1,
+                                            _2);
+
+      requestParser_.setFormHandler(formHandler);
+   }
+
+   virtual void continueParsing()
+   {
+      // continue parsing by reinvoking the read handler
+      // with the amount of bytes that were read last time it was called
+      // this is posted to the io_service to be invoked asynchronously
+      // so callers are not reentrantly locked
+      ioService_.post(boost::bind(&AsyncConnectionImpl<SocketType>::handleRead,
+                                  AsyncConnectionImpl<SocketType>::shared_from_this(),
+                                  boost::system::error_code(), bytesTransferred_));
+   }
+
+   virtual void setData(const boost::any& data)
+   {
+      RECURSIVE_LOCK_MUTEX(mutex_)
+      {
+         connectionData_ = data;
+      }
+      END_LOCK_MUTEX
+   }
+
+   virtual boost::any getData()
+   {
+      RECURSIVE_LOCK_MUTEX(mutex_)
+      {
+         return connectionData_;
+      }
+      END_LOCK_MUTEX
+
+      return boost::any();
    }
    
 private:
-   
+
    void handleRead(const boost::system::error_code& e,
                    std::size_t bytesTransferred)
    {
@@ -287,11 +373,20 @@ private:
       {
          if (!e)
          {
-            // parse next chunk
-            RequestParser::status status = requestParser_.parse(
-                                             request_,
-                                             buffer_.data(), 
+            bytesTransferred_ = bytesTransferred;
+
+            // we must synchronize access to the RequestParser, because while returning
+            // from a suspending form handler, we could be told to resume processing
+            // before the request parser properly saves its temporary state, causing all sorts of havoc
+            RequestParser::status status = RequestParser::error;
+            RECURSIVE_LOCK_MUTEX(mutex_)
+            {
+               // parse next chunk
+               status = requestParser_.parse(request_,
+                                             buffer_.data(),
                                              buffer_.data() + bytesTransferred);
+            }
+            END_LOCK_MUTEX
             
             // error - return bad request
             if (status == RequestParser::error)
@@ -305,12 +400,12 @@ private:
             {
                readSome();
             }
-            
-            // got valid request -- handle it 
-            else
+
+            // headers parsed - body parsing has not yet begun
+            else if (status == RequestParser::headers_parsed)
             {
                // record the original uri
-               originalUri_ = request_.absoluteUri();
+               absoluteUri_ = request_.absoluteUri();
 
                // call the request filter if we have one
                if (requestFilter_)
@@ -323,14 +418,46 @@ private:
                      boost::bind(
                         &AsyncConnectionImpl<SocketType>::requestFilterContinuation,
                         AsyncConnectionImpl<SocketType>::shared_from_this(),
-                        _1
+                        _1, e, bytesTransferred
                      ));
                }
                else
                {
-                  // call the handler directly
-                  callHandler();
+                  if (!callHeadersParsedHandler())
+                  {
+                     writeResponse();
+                     return;
+                  }
+
+                  // we need to resume body parsing by recalling the parse
+                  // method and providing the exact same buffer to continue
+                  // from where we left off
+                  handleRead(e, bytesTransferred);
                }
+
+               return;
+            }
+            
+            // pause - save current state
+            else if (status == RequestParser::pause)
+            {
+               // we will need to reinvoke this method with the same
+               // buffer when told to resume, so for now simply return
+               // to keep our internal state the same
+               return;
+            }
+
+            // form complete - do nothing since the form handler
+            // has been invoked by the request parser as appropriate
+            else if (status == RequestParser::form_complete)
+            {
+               return;
+            }
+
+            // got valid request -- handle it 
+            else
+            {  
+               callHandler();
             }
          }
          else // error reading
@@ -352,7 +479,9 @@ private:
       CATCH_UNEXPECTED_EXCEPTION
    }
    
-   void requestFilterContinuation(boost::shared_ptr<http::Response> response)
+   void requestFilterContinuation(boost::shared_ptr<http::Response> response,
+                                  const boost::system::error_code& e,
+                                  std::size_t bytesTransferred)
    {
       if (response)
       {
@@ -361,14 +490,29 @@ private:
       }
       else
       {
-         callHandler();
+         if (!callHeadersParsedHandler())
+         {
+            writeResponse();
+            return;
+         }
+
+         // we need to resume body parsing by recalling the parse
+         // method and providing the exact same buffer to continue
+         // from where we left off
+         handleRead(e, bytesTransferred);
       }
+   }
+
+   bool callHeadersParsedHandler()
+   {
+      return onHeadersParsed_(AsyncConnectionImpl<SocketType>::shared_from_this(),
+                              &request_);
    }
 
    void callHandler()
    {
-      handler_(AsyncConnectionImpl<SocketType>::shared_from_this(),
-               &request_);
+      onRequestParsed_(AsyncConnectionImpl<SocketType>::shared_from_this(),
+                       &request_);
    }
 
    void handleWrite(const boost::system::error_code& e, bool closeSocket)
@@ -448,17 +592,24 @@ private:
    // depending on whether or not SSL is enabled
    boost::shared_ptr<ISocketOperations> socketOperations_;
 
-   Handler handler_;
+   HeadersParsedHandler onHeadersParsed_;
+   Handler onRequestParsed_;
+   ClosedHandler onClosed_;
+   FormHandler formHandler_;
    RequestFilter requestFilter_;
    ResponseFilter responseFilter_;
    boost::array<char, 8192> buffer_ ;
    RequestParser requestParser_ ;
-   std::string originalUri_;
+   std::string absoluteUri_;
    http::Request request_;
    http::Response response_;
 
-   boost::mutex socketMutex_;
+   boost::recursive_mutex mutex_;
    bool closed_ = false;
+
+   size_t bytesTransferred_;
+
+   boost::any connectionData_;
 };
 
 } // namespace http

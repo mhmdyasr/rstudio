@@ -1,7 +1,7 @@
 /*
  * CodeSearchResources.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -41,5 +41,5 @@ public interface CodeSearchResources extends ClientBundle
    ImageResource gotoFunction2x();
    
    public static CodeSearchResources INSTANCE = 
-      (CodeSearchResources)GWT.create(CodeSearchResources.class) ;
+      (CodeSearchResources)GWT.create(CodeSearchResources.class);
 }

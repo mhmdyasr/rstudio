@@ -1,7 +1,7 @@
 /*
  * RGraphics.hpp
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -20,6 +20,8 @@
 #include <boost/date_time/posix_time/ptime.hpp>
 
 #include <core/BoostSignals.hpp>
+
+#include "RGraphicsConstants.h"
 
 namespace rstudio {
 namespace r {
@@ -60,8 +62,8 @@ struct is_error_code_enum<rstudio::r::session::graphics::errc::errc_t>
 #include <boost/function.hpp>
 
 #include <core/BoostSignals.hpp>
-#include <core/Error.hpp>
-#include <core/json/Json.hpp>
+#include <shared_core/Error.hpp>
+#include <shared_core/json/Json.hpp>
 
 namespace rstudio {
 namespace core {
@@ -73,6 +75,9 @@ namespace rstudio {
 namespace r {
 namespace session {
 namespace graphics {
+
+std::string getDefaultBackend();
+std::string getDefaultAntialiasing();
 
 namespace device {
 

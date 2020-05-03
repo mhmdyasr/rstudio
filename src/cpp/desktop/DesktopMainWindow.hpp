@@ -1,7 +1,7 @@
 /*
  * DesktopMainWindow.hpp
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-18 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -32,36 +32,55 @@ namespace rstudio {
 namespace desktop {
 
 class SessionLauncher;
+class JobLauncher;
+class RemoteDesktopSessionLauncher;
 
 class MainWindow : public GwtWindow
 {
    Q_OBJECT
 
 public:
-   explicit MainWindow(QUrl url=QUrl());
+   explicit MainWindow(QUrl url = QUrl(),
+                       bool isRemoteDesktop = false);
 
 public:
    QString getSumatraPdfExePath();
    void launchSession(bool reload);
    void launchRStudio(const std::vector<std::string>& args = std::vector<std::string>(),
                       const std::string& initialDir = std::string());
+   void launchRemoteRStudio();
+   void launchRemoteRStudioProject(const QString& projectUrl);
+
+   RemoteDesktopSessionLauncher* getRemoteDesktopSessionLauncher();
+   boost::shared_ptr<JobLauncher> getJobLauncher();
+
+   QWebEngineProfile* getPageProfile();
+   WebView* getWebView();
+   bool workbenchInitialized();
 
 public Q_SLOTS:
    void quit();
    void loadUrl(const QUrl& url);
+   void loadRequest(const QWebEngineHttpRequest& request);
+   void loadHtml(const QString& html);
    void setMenuBar(QMenuBar *pMenuBar);
    void invokeCommand(QString commandId);
+   void runJavaScript(QString script);
    void openFileInRStudio(QString path);
    void onPdfViewerClosed(QString pdfPath);
    void onPdfViewerSyncSource(QString srcFile, int line, int column);
    void onLicenseLost(QString licenseMessage);
    void onUpdateLicenseWarningBar(QString message);
 
+   bool isRemoteDesktop() const;
+
 Q_SIGNALS:
    void firstWorkbenchInitialized();
+   void urlChanged(QUrl url);
 
 protected Q_SLOTS:
    void onWorkbenchInitialized();
+   void onSessionQuit();
    void resetMargins();
    void commitDataRequest(QSessionManager &manager);
 
@@ -71,10 +90,12 @@ protected:
 // private interface for SessionLauncher
 private:
    friend class SessionLauncher;
+   friend class RemoteDesktopSessionLauncher;
 
    // allow SessionLauncher to give us a reference to itself (so we can
    // call launchProcess back on it)
    void setSessionLauncher(SessionLauncher* pSessionLauncher);
+   void setRemoteDesktopSessionLauncher(RemoteDesktopSessionLauncher* pSessionLauncher);
 
    // same for application launches
    void setAppLauncher(ApplicationLaunch* pAppLauncher);
@@ -92,12 +113,23 @@ private:
    // callback when window is activated
    void onActivated() override;
 
+   void onUrlChanged(QUrl url);
+   void onLoadFinished(bool ok);
+
+   void saveRemoteAuthCookies(const boost::function<QList<QNetworkCookie>()>& loadCookies,
+                              const boost::function<void(QList<QNetworkCookie>)>& saveCookies,
+                              bool saveSessionCookies);
+
 private:
+   bool isRemoteDesktop_;
    bool quitConfirmed_ = false;
    bool geometrySaved_ = false;
+   bool workbenchInitialized_ = false;
    MenuCallback menuCallback_;
    GwtCallback gwtCallback_;
    SessionLauncher* pSessionLauncher_;
+   RemoteDesktopSessionLauncher* pRemoteSessionLauncher_;
+   boost::shared_ptr<JobLauncher> pLauncher_;
    ApplicationLaunch *pAppLauncher_;
    QProcess* pCurrentSessionProcess_;
 

@@ -1,7 +1,7 @@
 #
 # CMakeLists.txt
 #
-# Copyright (C) 2009-18 by RStudio, Inc.
+# Copyright (C) 2009-19 by RStudio, PBC
 #
 # Unless you have received this program directly from RStudio pursuant
 # to the terms of a commercial license agreement with RStudio, then
@@ -14,9 +14,16 @@
 #
 
 # set minimum version
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.4.3)
 
-project (RSTUDIO_CPP)
+# read release name
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../CMakeRelease.txt")
+
+# set project name
+project("RStudio [${RSTUDIO_RELEASE_NAME}]")
+
+# tools for reading executable file pre-requisites
+include(GetPrerequisites)
 
 # set compiler
 include("${CMAKE_CURRENT_SOURCE_DIR}/../../CMakeCompiler.txt")
@@ -69,9 +76,15 @@ if(UNIX)
    # compiler flags
    add_definitions(-Wall -pthread)
 
+   if(RSTUDIO_ASAN)
+      message(STATUS "Compiling with Address Sanitizer (ASAN) support")
+      add_definitions(-fsanitize=address -fno-omit-frame-pointer -fno-optimize-sibling-calls -O1)
+      set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
+   endif()
+
    if(APPLE)
       add_definitions(-Wno-unknown-warning-option -Wsign-compare -Wno-unused-local-typedefs
-                      -Wno-deprecated-declarations)
+                      -Wno-deprecated-declarations -fvisibility=hidden)
 
       find_library(APPLICATION_SERVICES_LIBRARY NAMES ApplicationServices)
       find_library(COCOA_LIBRARY NAMES Cocoa)
@@ -163,8 +176,12 @@ else()
       -D_WIN32_WINNT=0x601
       -D_WIN32_IE=0x601
       -DWIN32_LEAN_AND_MEAN
-      -D_WIN64
       -DBOOST_USE_WINDOWS_H)
+
+   # ensure we use 64-bit APIs for 64-bit builds
+   if(NOT RSTUDIO_SESSION_WIN32)
+      add_definitions(-D_WIN64)
+   endif()
 endif()
 
 if(RSTUDIO_PACKAGE_BUILD)
@@ -180,11 +197,12 @@ endif()
 
 # default Boost versions
 if(NOT RSTUDIO_BOOST_REQUESTED_VERSION)
-   if (WIN32)
-      set(RSTUDIO_BOOST_REQUESTED_VERSION 1.65.1)
-   else()
-      set(RSTUDIO_BOOST_REQUESTED_VERSION 1.63.0)
-   endif()
+   set(RSTUDIO_BOOST_REQUESTED_VERSION 1.69.0)
+endif()
+
+# disable system boost if we're not using it.
+if(NOT RSTUDIO_USE_SYSTEM_BOOST)
+   set(Boost_NO_SYSTEM_PATHS ON)
 endif()
 
 # disable Boost Signals deprecation warning
@@ -199,7 +217,6 @@ list(APPEND BOOST_LIBS
    program_options
    random
    regex
-   signals
    system
    thread
 )
@@ -207,14 +224,14 @@ list(APPEND BOOST_LIBS
 # UNIX BOOST
 if(UNIX)
    # prefer static link to our custom built version
-   set(RSTUDIO_TOOLS_BOOST /opt/rstudio-tools/boost/boost_1_63_0)
+   set(RSTUDIO_TOOLS_BOOST /opt/rstudio-tools/boost/boost_1_69_0)
    if(NOT RSTUDIO_USE_SYSTEM_BOOST AND EXISTS ${RSTUDIO_TOOLS_BOOST})
       add_definitions(-DRSTUDIO_BOOST_NAMESPACE=rstudio_boost)
 
       # find headers
       set(Boost_USE_STATIC_LIBS ON)
       set(BOOST_INCLUDEDIR  ${RSTUDIO_TOOLS_BOOST}/include)
-      find_package(Boost ${RSTUDIO_BOOST_REQUESTED_VERSION} REQUIRED)
+      find_package(Boost ${RSTUDIO_BOOST_REQUESTED_VERSION} EXACT REQUIRED)
       if(NOT Boost_VERSION LESS 106900)
          list(REMOVE_ITEM BOOST_LIBS signals)
       endif()
@@ -238,16 +255,20 @@ if(UNIX)
 else()
    # hard-code to our own prebuilt boost libs
    add_definitions(-DRSTUDIO_BOOST_NAMESPACE=rstudio_boost)
-   set(BOOST_ARCH "64")
-   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
-      set(BOOST_SUFFIX "vc141-mt-1_65_1.lib")
-      set(BOOST_ROOT "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/boost-1.65.1-win-msvc141-release-static/boost${BOOST_ARCH}")
+   if(RSTUDIO_SESSION_WIN32)
+      set(BOOST_ARCH "32")
    else()
-      set(BOOST_SUFFIX "vc141-mt-gd-1_65_1.lib")
-      set(BOOST_ROOT "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/boost-1.65.1-win-msvc141-debug-static/boost${BOOST_ARCH}")
+      set(BOOST_ARCH "64")
    endif()
-   set(BOOST_INCLUDEDIR "${BOOST_ROOT}/include/boost-1_65_1")
-   find_package(Boost ${RSTUDIO_BOOST_REQUESTED_VERSION} REQUIRED)
+   if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+      set(BOOST_SUFFIX "vc141-mt-x${BOOST_ARCH}-1_69.lib")
+      set(BOOST_ROOT "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/boost-1.69.0-win-msvc141-release-static/boost${BOOST_ARCH}")
+   else()
+      set(BOOST_SUFFIX "vc141-mt-gd-x${BOOST_ARCH}-1_69.lib")
+      set(BOOST_ROOT "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/boost-1.69.0-win-msvc141-debug-static/boost${BOOST_ARCH}")
+   endif()
+   set(BOOST_INCLUDEDIR "${BOOST_ROOT}/include/boost-1_69_0")
+   find_package(Boost ${RSTUDIO_BOOST_REQUESTED_VERSION} EXACT REQUIRED)
    set(BOOST_LIBRARYDIR "${BOOST_ROOT}/lib")
    foreach(BOOST_LIB ${BOOST_LIBS})
       list(APPEND Boost_LIBRARIES "${BOOST_LIBRARYDIR}/librstudio_boost_${BOOST_LIB}-${BOOST_SUFFIX}")
@@ -287,13 +308,17 @@ else()
    else()
       set(RSTUDIO_TOOLS_CRASHPAD "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/crashpad-release")
    endif()
-
+   if(RSTUDIO_SESSION_WIN32)
+      set(CRASHPAD_ARCH "x86")
+   else()
+      set(CRASHPAD_ARCH "x64")
+   endif()
    set(CRASHPAD_INCLUDE_DIR "${RSTUDIO_TOOLS_CRASHPAD}/include")
    include_directories(SYSTEM ${CRASHPAD_INCLUDE_DIR})
    include_directories(SYSTEM "${CRASHPAD_INCLUDE_DIR}/crashpad")
    include_directories(SYSTEM "${CRASHPAD_INCLUDE_DIR}/mini_chromium")
    set(CRASHPAD_OUTPUT_DIR "${RSTUDIO_TOOLS_CRASHPAD}/bin")
-   set(CRASHPAD_LIBRARY_DIR "${RSTUDIO_TOOLS_CRASHPAD}/lib_md")
+   set(CRASHPAD_LIBRARY_DIR "${RSTUDIO_TOOLS_CRASHPAD}/${CRASHPAD_ARCH}/lib_md")
 endif()
 
 # find crashpad libraries, ensuring the correct link order
@@ -330,18 +355,100 @@ else()
    if(UNIX)
       install(PROGRAMS "${CRASHPAD_OUTPUT_DIR}/crashpad_handler" DESTINATION ${RSTUDIO_INSTALL_BIN})
       install(PROGRAMS "${CRASHPAD_OUTPUT_DIR}/crashpad_http_upload" DESTINATION ${RSTUDIO_INSTALL_BIN})
-   else()
+   elseif(NOT RSTUDIO_SESSION_WIN32)
       install(PROGRAMS "${CRASHPAD_OUTPUT_DIR}/crashpad_handler.com" DESTINATION ${RSTUDIO_INSTALL_BIN})
       install(PROGRAMS "${CRASHPAD_OUTPUT_DIR}/crashpad_handler.exe" DESTINATION ${RSTUDIO_INSTALL_BIN})
       install(PROGRAMS "${CRASHPAD_OUTPUT_DIR}/crashpad_http_upload.exe" DESTINATION ${RSTUDIO_INSTALL_BIN})
    endif()
 endif()
 
+# SOCI
+if(UNIX)
+   set(RSTUDIO_TOOLS_SOCI "/opt/rstudio-tools/soci")
+   set(SOCI_INCLUDE_BUILD_DIR "${RSTUDIO_TOOLS_SOCI}/build/include")
+else()
+   set(RSTUDIO_TOOLS_SOCI "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/soci")
+   if(RSTUDIO_SESSION_WIN32)
+      set(SOCI_ARCH "x86")
+   else()
+      set(SOCI_ARCH "x64")
+   endif()
+   set(SOCI_INCLUDE_BUILD_DIR "${RSTUDIO_TOOLS_SOCI}/build/${SOCI_ARCH}/include")
+endif()
+
+set(SOCI_INCLUDE_DIR "${RSTUDIO_TOOLS_SOCI}/include")
+if(NOT RSTUDIO_USE_SYSTEM_SOCI)
+   include_directories(SYSTEM ${SOCI_INCLUDE_DIR})
+   include_directories(SYSTEM ${SOCI_INCLUDE_BUILD_DIR})
+endif()
+
+# database library includes
+if (UNIX)
+   if (APPLE)
+      # We assume that libpq is available under the default brew install location
+      # since we install postgresql via brew in install-dependencies-osx
+      include_directories(SYSTEM "/usr/local/opt/postgresql/include")
+      include_directories(SYSTEM "/usr/local/opt/postgresql/include/libpq")
+   else()
+      include_directories(SYSTEM "/usr/include/postgresql")
+      include_directories(SYSTEM "/usr/include/pgsql")
+   endif()
+elseif(WIN32)
+   include_directories(SYSTEM "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/sqlite/sqlite-amalgamation-3310100")
+   include_directories(SYSTEM "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/postgresql/include")
+endif()
+
+# find SOCI libraries
+if(UNIX)
+   set(SOCI_LIBRARY_DIR "${RSTUDIO_TOOLS_SOCI}/build/lib")
+   if(NOT APPLE AND RSTUDIO_USE_SYSTEM_SOCI)
+      set(SOCI_LIBRARY_DIR "/usr/lib")
+   endif()
+   find_library(SOCI_CORE_LIB NAMES "libsoci_core.a" "soci_core" PATHS "${SOCI_LIBRARY_DIR}" NO_DEFAULT_PATH)
+   find_library(SOCI_SQLITE_LIB NAMES "libsoci_sqlite3.a" "soci_sqlite3" PATHS "${SOCI_LIBRARY_DIR}" NO_DEFAULT_PATH)
+   find_library(SOCI_POSTGRESQL_LIB NAMES "libsoci_postgresql.a" "soci_postgresql" PATHS "${SOCI_LIBRARY_DIR}" NO_DEFAULT_PATH)
+   find_library(DL_LIB "dl")
+   find_library(SQLITE_LIB "sqlite3")
+   find_library(PQ_LIB "pq")
+   list(APPEND SOCI_LIBRARIES ${SOCI_SQLITE_LIB} ${SOCI_POSTGRESQL_LIB} ${SQLITE_LIB} ${PQ_LIB} ${SOCI_CORE_LIB} ${DL_LIB})
+else()
+   set(SOCI_LIBRARY_DIR "${RSTUDIO_TOOLS_SOCI}/build/${SOCI_ARCH}/lib")
+   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+       file(GLOB_RECURSE SOCI_LIBRARIES "${SOCI_LIBRARY_DIR}/Debug/*.lib")
+       list(APPEND SOCI_LIBRARIES "Wldap32")
+       list(APPEND SOCI_LIBRARIES "Secur32")
+       list(APPEND SOCI_LIBRARIES "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/sqlite/sqlite3-debug-${SOCI_ARCH}.lib")
+       list(APPEND SOCI_LIBRARIES "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/postgresql/lib/${SOCI_ARCH}/Debug/libpq.lib")
+       list(APPEND SOCI_LIBRARIES "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/postgresql/lib/${SOCI_ARCH}/Debug/libpgcommon.lib")
+       list(APPEND SOCI_LIBRARIES "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/postgresql/lib/${SOCI_ARCH}/Debug/libpgport.lib")
+   else()
+       file(GLOB_RECURSE SOCI_LIBRARIES "${SOCI_LIBRARY_DIR}/Release/*.lib")
+       list(APPEND SOCI_LIBRARIES "Wldap32")
+       list(APPEND SOCI_LIBRARIES "Secur32")
+       list(APPEND SOCI_LIBRARIES "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/sqlite/sqlite3-release-${SOCI_ARCH}.lib")
+       list(APPEND SOCI_LIBRARIES "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/postgresql/lib/${SOCI_ARCH}/Release/libpq.lib")
+       list(APPEND SOCI_LIBRARIES "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/postgresql/lib/${SOCI_ARCH}/Release/libpgcommon.lib")
+       list(APPEND SOCI_LIBRARIES "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/install-soci/postgresql/lib/${SOCI_ARCH}/Release/libpgport.lib")
+   endif()
+endif()
+list(LENGTH SOCI_LIBRARIES SOCI_LIB_COUNT)
+
+if (SOCI_LIB_COUNT EQUAL 0)
+   message(FATAL_ERROR "No SOCI libraries found under ${SOCI_LIBRARY_DIR}. Ensure the SOCI dependency is installed and try again.")
+endif()
+
+message(STATUS "SOCI libraries found under ${SOCI_LIBRARY_DIR}")
+
 if(WIN32)
      # winpty - pseudoterminal support on Windows
-     set(WINPTY_ARCH "64")
+     if(RSTUDIO_SESSION_WIN32)
+        set(WINPTY_ARCH "32")
+     else()
+        set(WINPTY_ARCH "64")
+     endif()
      set(WINPTY_ROOT "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/winpty-0.4.3-msys2-2.7.0")
      set(WINPTY_INCLUDEDIR "${WINPTY_ROOT}/${WINPTY_ARCH}/include")
+     set(WINPTY_BINDIR_32 "${WINPTY_ROOT}/32/bin")
      set(WINPTY_BINDIR_64 "${WINPTY_ROOT}/64/bin")
 
      # add winpty as system include directory
@@ -354,13 +461,18 @@ if(WIN32)
         set(OPENSSL_BUILD_TYPE "release")
      endif()
 
-     set(OPENSSL_BITNESS "64")
-     set(OPENSSL_NAME "openssl-1.0.2p")
+     if(RSTUDIO_SESSION_WIN32)
+        set(OPENSSL_BITNESS "32")
+     else()
+        set(OPENSSL_BITNESS "64")
+     endif()
+
+     set(OPENSSL_NAME "openssl-1.1.1d")
      set(OPENSSL_ROOT_DIR "${RSTUDIO_WINDOWS_DEPENDENCIES_DIR}/${OPENSSL_NAME}/${OPENSSL_NAME}-${OPENSSL_BUILD_TYPE}-${OPENSSL_BITNESS}")
      set(OPENSSL_INCLUDE_DIR "${OPENSSL_ROOT_DIR}/include")
      set(OPENSSL_LIBRARY_DIR "${OPENSSL_ROOT_DIR}/lib")
-     set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_LIBRARY_DIR}/libeay32.lib")
-     set(OPENSSL_SSL_LIBRARY "${OPENSSL_LIBRARY_DIR}/ssleay32.lib")
+     set(OPENSSL_CRYPTO_LIBRARY "${OPENSSL_LIBRARY_DIR}/libcrypto.lib")
+     set(OPENSSL_SSL_LIBRARY "${OPENSSL_LIBRARY_DIR}/libssl.lib")
      list(APPEND OPENSSL_LIBRARIES "${OPENSSL_CRYPTO_LIBRARY}")
      list(APPEND OPENSSL_LIBRARIES "${OPENSSL_SSL_LIBRARY}")
 
@@ -376,6 +488,12 @@ if(NOT RSTUDIO_ADDINS_PATH)
    endif()
 endif()
 
+# external libraries
+add_subdirectory(ext)
+
+# shared library
+add_subdirectory(shared_core)
+
 # core library
 add_subdirectory(core)
 
@@ -383,9 +501,6 @@ add_subdirectory(core)
 if (RSTUDIO_SERVER)
    add_subdirectory(server_core)
 endif()
-
-# external libraries
-add_subdirectory(ext)
 
 # echo configuration modes
 if(RSTUDIO_DEVELOPMENT)
@@ -399,6 +514,9 @@ if (RSTUDIO_DESKTOP)
 endif()
 if(RSTUDIO_CONFIG_CORE_DEV)
    message(STATUS "Configured to build CORE_DEV")
+endif()
+if(RSTUDIO_SESSION_WIN32)
+   message(STATUS "Configured to build SESSION_WIN32")
 endif()
 if(RSTUDIO_CONFIG_MONITOR_ONLY)
    message(STATUS "Configured to build MONITOR_ONLY")
@@ -427,6 +545,9 @@ else()
    if(NOT RSTUDIO_CONFIG_MONITOR_ONLY)
 
       # find LibR
+      if(RSTUDIO_SESSION_WIN32)
+         set(LIBR_FIND_WINDOWS_32BIT TRUE)
+      endif()
       find_package(LibR REQUIRED)
 
       # verify we got the required R version
@@ -465,7 +586,6 @@ else()
       if(RSTUDIO_DESKTOP)
          configure_file(conf/rdesktop-dev.conf ${CMAKE_CURRENT_BINARY_DIR}/conf/rdesktop-dev.conf)
          if(NOT WIN32)
-            configure_file(rdesktop-dev.in ${CMAKE_CURRENT_BINARY_DIR}/rdesktop-dev)
             if(NOT APPLE)
                configure_file(rstudio-dev.in ${CMAKE_CURRENT_BINARY_DIR}/rstudio-dev)
             else()
@@ -483,7 +603,7 @@ else()
          configure_file(rserver-dev.in ${CMAKE_CURRENT_BINARY_DIR}/rserver-dev)
          configure_file(conf/rserver-dev.conf ${CMAKE_CURRENT_BINARY_DIR}/conf/rserver-dev.conf)
          configure_file(conf/rsession-dev.conf ${CMAKE_CURRENT_BINARY_DIR}/conf/rsession-dev.conf)
-
+         configure_file(conf/database-dev.conf ${CMAKE_CURRENT_BINARY_DIR}/conf/database-dev.conf)
       endif()
    endif()
 

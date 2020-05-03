@@ -1,7 +1,7 @@
 /*
  * LinkColumn.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -91,7 +91,7 @@ public abstract class LinkColumn<T> extends Column<T, String>
                     onClicked.execute(dataProvider.getList().get(idx));
               }
            }
-         }            
+         }
       });
    }
    
@@ -107,7 +107,7 @@ public abstract class LinkColumn<T> extends Column<T, String>
       Styles styles();
    }
    
-   static Resources RESOURCES = (Resources)GWT.create(Resources.class) ;
+   static Resources RESOURCES = (Resources)GWT.create(Resources.class);
    public static void ensureStylesInjected()
    {
       RESOURCES.styles().ensureInjected();

@@ -1,7 +1,7 @@
 /*
- * ServerSecureCookie.cpp
+ * SecureCookie.cpp
  *
- * Copyright (C) 2009-17 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -35,7 +35,6 @@
 
 #include <core/system/Crypto.hpp>
 #include <core/system/PosixSystem.hpp>
-#include <core/system/FileMode.hpp>
 
 #include <server_core/http/SecureCookie.hpp>
 #include <server_core/SecureKeyFile.hpp>
@@ -100,7 +99,9 @@ http::Cookie createSecureCookie(const std::string& name,
                                 const core::http::Request& request,
                                 const boost::posix_time::time_duration& validDuration,
                                 const std::string& path,
-                                bool secure)
+                                bool secure,
+                                bool iFrameEmbedding,
+                                bool legacyCookies)
 {
    // generate expires string
    std::string expires = http::util::httpDate(
@@ -132,15 +133,17 @@ http::Cookie createSecureCookie(const std::string& name,
                        name,
                        signedCookieValue,
                        path,
+                       http::Cookie::selectSameSite(legacyCookies, iFrameEmbedding),
                        true, // HTTP only
                        secure);
 }
 
 std::string readSecureCookie(const core::http::Request& request,
-                             const std::string& name)
+                             const std::string& name,
+                             bool iFrameLegacyCookies)
 {
    // get the signed cookie value
-   std::string signedCookieValue = request.cookieValue(name);
+   std::string signedCookieValue = request.cookieValue(name, iFrameLegacyCookies);
    if (signedCookieValue.empty())
       return std::string();
 
@@ -209,16 +212,22 @@ void set(const std::string& name,
          const boost::posix_time::time_duration& validDuration,
          const std::string& path,
          http::Response* pResponse,
-         bool secure)
+         bool secure,
+         bool iFrameEmbedding,
+         bool legacyCookies,
+         bool iFrameLegacyCookies)
 {
    secure_cookie::set(name,
                       value,
                       request,
                       validDuration,
-                      boost::none,
+                      boost::optional<boost::gregorian::days>(),
                       path,
                       pResponse,
-                      secure);
+                      secure,
+                      iFrameEmbedding,
+                      legacyCookies,
+                      iFrameLegacyCookies);
 }
 
 void set(const std::string& name,
@@ -228,7 +237,10 @@ void set(const std::string& name,
          const boost::optional<boost::gregorian::days>& cookieExpiresDays,
          const std::string& path,
          http::Response* pResponse,
-         bool secure)
+         bool secure,
+         bool iFrameEmbedding,
+         bool legacyCookies,
+         bool iFrameLegacyCookies)
 {
    // create secure cookie
    http::Cookie cookie = createSecureCookie(name,
@@ -236,22 +248,58 @@ void set(const std::string& name,
                                             request,
                                             validDuration,
                                             path,
-                                            secure);
+                                            secure,
+                                            iFrameEmbedding,
+                                            legacyCookies);
 
    // expire from browser as requested
    if (cookieExpiresDays.is_initialized())
       cookie.setExpires(*cookieExpiresDays);
 
    // add to response
-   pResponse->addCookie(cookie);
+   pResponse->addCookie(cookie, iFrameLegacyCookies);
+}
+
+void set(const std::string& name,
+         const std::string& value,
+         const http::Request& request,
+         const boost::posix_time::time_duration& validDuration,
+         const boost::optional<boost::posix_time::time_duration>& expiresFromNow,
+         const std::string& path,
+         http::Response* pResponse,
+         bool secure,
+         bool iFrameEmbedding,
+         bool legacyCookies,
+         bool iFrameLegacyCookies)
+{
+   // create secure cookie
+   http::Cookie cookie = createSecureCookie(name,
+                                            value,
+                                            request,
+                                            validDuration,
+                                            path,
+                                            secure,
+                                            iFrameEmbedding,
+                                            legacyCookies);
+
+   // expire from browser as requested
+   if (expiresFromNow.is_initialized())
+      cookie.setExpires(*expiresFromNow);
+
+   // add to response
+   pResponse->addCookie(cookie, iFrameLegacyCookies);
 }
 
 void remove(const http::Request& request,
             const std::string& name,
             const std::string& path,
-            core::http::Response* pResponse)
+            core::http::Response* pResponse,
+            bool secure,
+            bool iFrameEmbedding,
+            bool legacyCookies,
+            bool iFrameLegacyCookies)
 {
-   // create vanilla cookie (no need for secure cookie since we are removing)
+   // create cookie
    http::Cookie cookie(request, name, std::string(), path);
 
    // expire delete
@@ -260,8 +308,18 @@ void remove(const http::Request& request,
    // secure cookies are set http only, so clear them that way
    cookie.setHttpOnly();
 
+   if (secure)
+   {
+      // set secure flag when removing secure cookies; there's no need for a "secure" empty value
+      // but best practices generally dictate always setting the secure flag on cookies delivered
+      // over https
+      cookie.setSecure();
+   }
+
+   cookie.setSameSite(http::Cookie::selectSameSite(legacyCookies, iFrameEmbedding));
+
    // add to response
-   pResponse->addCookie(cookie);
+   pResponse->addCookie(cookie, iFrameLegacyCookies);
 }
 
 const std::string& getKey()
@@ -281,7 +339,7 @@ Error initialize()
 
 Error initialize(const FilePath& secureKeyFile)
 {
-   if (secureKeyFile.empty())
+   if (secureKeyFile.isEmpty())
       return initialize();
 
    Error error = key_file::readSecureKeyFile(secureKeyFile, &s_secureCookieKey);

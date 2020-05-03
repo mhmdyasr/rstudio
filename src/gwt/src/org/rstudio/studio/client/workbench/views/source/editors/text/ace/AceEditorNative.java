@@ -1,7 +1,7 @@
 /*
  * AceEditorNative.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -22,11 +22,14 @@ import com.google.gwt.user.client.Command;
 
 import org.rstudio.core.client.CommandWithArg;
 import org.rstudio.core.client.js.JsMap;
-import org.rstudio.studio.client.workbench.prefs.model.UIPrefs;
+import org.rstudio.core.client.widget.CanSetControlId;
+import org.rstudio.studio.client.workbench.prefs.model.UserPrefs;
 
 import java.util.LinkedList;
 
-public class AceEditorNative extends JavaScriptObject {
+public class AceEditorNative extends JavaScriptObject
+                             implements CanSetControlId
+{
    
    protected AceEditorNative() {}
 
@@ -156,7 +159,22 @@ public class AceEditorNative extends JavaScriptObject {
                  command.@com.google.gwt.user.client.Command::execute()();
               }));
    }-*/;
-   
+
+   public native final void onChangeScrollTop(Command command) /*-{
+       this.getSession().on("changeScrollTop",
+           $entry(function () {
+               command.@com.google.gwt.user.client.Command::execute()();
+           }));
+   }-*/;
+
+   @SuppressWarnings("hiding")
+   public native final <Tooltip> void onShowGutterTooltip(CommandWithArg<Tooltip> command) /*-{
+       this.on("showGutterTooltip",
+           $entry(function (arg) {
+               command.@org.rstudio.core.client.CommandWithArg::execute(Ljava/lang/Object;)(arg);
+           }));
+   }-*/;
+
    public native final <T> void onGutterMouseDown(CommandWithArg<T> command) /*-{
       this.on("guttermousedown",
          $entry(function (arg) {
@@ -169,6 +187,8 @@ public class AceEditorNative extends JavaScriptObject {
       final LinkedList<JavaScriptObject> handles = new LinkedList<JavaScriptObject>();
       handles.add(addDomListener(getTextInputElement(), "keydown", handlers));
       handles.add(addDomListener(getTextInputElement(), "keypress", handlers));
+      handles.add(addDomListener(getTextInputElement(), "changeScrollTop", handlers));
+      handles.add(addDomListener(this.cast(), "showGutterTooltip", handlers));
       handles.add(addDomListener(this.<Element>cast(), "focus", handlers));
       handles.add(addDomListener(this.<Element>cast(), "blur", handlers));
 
@@ -182,9 +202,24 @@ public class AceEditorNative extends JavaScriptObject {
       };
    }
 
-   private native Element getTextInputElement() /*-{
+   public final native Element getTextInputElement() /*-{
       return this.textInput.getElement();
    }-*/;
+
+   /**
+    * Set an aria-label on the input element
+    * @param label
+    */
+   public final void setTextInputAriaLabel(String label)
+   {
+      Element textInput = getTextInputElement();
+      textInput.setAttribute("aria-label", label);
+   }
+
+   public final void setElementId(String id)
+   {
+      getTextInputElement().setId(id);
+   }
 
    private native static JavaScriptObject addDomListener(
          Element element,
@@ -312,19 +347,11 @@ public class AceEditorNative extends JavaScriptObject {
    }-*/;
 
    public final native void autoHeight() /*-{
-      var editor = this;
-      function updateEditorHeight() {
-         editor.container.style.height = (Math.max(1, editor.getSession().getScreenLength()) * editor.renderer.lineHeight) + 'px';
-         editor.resize();
-         editor.renderer.scrollToY(0);
-         editor.renderer.scrollToX(0);
-      }
-      if (!editor.autoHeightAttached) {
-         editor.autoHeightAttached = true;
-         editor.getSession().getDocument().on("change", updateEditorHeight);
-         editor.renderer.$textLayer.on("changeCharacterSize", updateEditorHeight);
-      }
-      updateEditorHeight();
+      this.setOptions({
+         minLines: 1,
+         maxLines: Infinity,
+         scrollPastEnd: false
+      });
    }-*/;
 
    public final native void onCursorChange() /*-{
@@ -537,12 +564,12 @@ public class AceEditorNative extends JavaScriptObject {
       $wnd.require("mode/auto_brace_insert").setInsertMatching(value);
    }-*/;
    
-   public final static void syncUiPrefs(UIPrefs uiPrefs)
+   public final static void syncUiPrefs(UserPrefs userPrefs)
    {
       if (uiPrefsSynced_)
          return;
 
-      uiPrefs.insertMatching().bind(new CommandWithArg<Boolean>() 
+      userPrefs.insertMatching().bind(new CommandWithArg<Boolean>() 
       {
          @Override
          public void execute(Boolean arg) 
@@ -551,7 +578,7 @@ public class AceEditorNative extends JavaScriptObject {
          }
       });
       
-      uiPrefs.verticallyAlignArgumentIndent().bind(new CommandWithArg<Boolean>()
+      userPrefs.verticallyAlignArgumentsIndent().bind(new CommandWithArg<Boolean>()
       {
          @Override
          public void execute(Boolean arg)
@@ -614,6 +641,25 @@ public class AceEditorNative extends JavaScriptObject {
       this.setOption("cursorStyle", style);
    }-*/;
    
+   public final native void setScrollSpeed(double speed) /*-{
+      this.setOption("scrollSpeed", speed);
+   }-*/;
+   
+   public final native void setIndentedSoftWrap(boolean softWrap) /*-{
+      this.setOption("indentedSoftWrap", softWrap);
+   }-*/;
+
+   public final native void setTabMovesFocus(boolean movesFocus) /*-{
+      if (movesFocus) {
+         this.commands.bindKey("Tab", null);
+         this.commands.bindKey("Shift+Tab", null);
+      } else {
+         this.commands.bindKey("Tab", "indent");
+         this.commands.bindKey("Shift+Tab", "outdent");
+      }
+   }-*/;
+   
+
    private static final native void initialize()
    /*-{
       // Remove the 'Return' keybinding associated with Emacs.
@@ -628,8 +674,8 @@ public class AceEditorNative extends JavaScriptObject {
          delete bindings["return"];
       }
    }-*/;
-   
+
    static { initialize(); }
-   
+
    private static boolean uiPrefsSynced_ = false;
 }

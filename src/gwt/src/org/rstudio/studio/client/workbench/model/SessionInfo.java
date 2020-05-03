@@ -1,7 +1,7 @@
 /*
  * SessionInfo.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -24,8 +24,12 @@ import org.rstudio.studio.client.application.model.SessionInitOptions;
 import org.rstudio.studio.client.common.compilepdf.model.CompilePdfState;
 import org.rstudio.studio.client.common.console.ConsoleProcessInfo;
 import org.rstudio.studio.client.common.debugging.model.ErrorManagerState;
+import org.rstudio.studio.client.common.dependencies.model.DependencyList;
 import org.rstudio.studio.client.common.rnw.RnwWeave;
 import org.rstudio.studio.client.workbench.addins.Addins.RAddins;
+import org.rstudio.studio.client.workbench.prefs.model.PrefLayer;
+import org.rstudio.studio.client.workbench.prefs.model.UserPrefs;
+import org.rstudio.studio.client.workbench.prefs.model.UserState;
 import org.rstudio.studio.client.workbench.views.buildtools.model.BuildState;
 import org.rstudio.studio.client.workbench.views.connections.model.Connection;
 import org.rstudio.studio.client.workbench.views.connections.model.ConnectionId;
@@ -57,6 +61,10 @@ public class SessionInfo extends JavaScriptObject
 
    public final native String getUserIdentity() /*-{
       return this.userIdentity;
+   }-*/;
+
+   public final native String getSystemUsername() /*-{
+      return this.systemUsername;
    }-*/;
    
    public final native String getSessionId() /*-{
@@ -99,11 +107,32 @@ public class SessionInfo extends JavaScriptObject
       return this.temp_dir;
    }-*/;
 
-   public final native JsObject getUiPrefs() /*-{
-      if (!this.ui_prefs)
-         this.ui_prefs = {};
-      return this.ui_prefs;
+   public final native JsArray<PrefLayer> getPrefs() /*-{
+      if (!this.user_prefs)
+         this.user_prefs = [ {} ];
+      return this.user_prefs;
    }-*/;
+   
+   public final JsObject getUserPrefs()
+   {
+      return getPrefs().get(Math.min(getPrefs().length(), UserPrefs.LAYER_USER)).getValues();
+   }
+
+   public final PrefLayer getUserPrefLayer()
+   {
+      return getPrefs().get(Math.min(getPrefs().length(), UserPrefs.LAYER_USER));
+   }
+
+   public final native JsArray<PrefLayer> getUserState() /*-{
+      if (!this.user_state)
+         this.user_state = [ {} ];
+      return this.user_state;
+   }-*/;
+
+   public final PrefLayer getUserStateLayer()
+   {
+      return getUserState().get(Math.min(getPrefs().length(), UserState.LAYER_USER));
+   }
 
    public final static String DESKTOP_MODE = "desktop";
    public final static String SERVER_MODE = "server";
@@ -156,14 +185,6 @@ public class SessionInfo extends JavaScriptObject
       return this.lists;
    }-*/;
 
-   public final native boolean hasAgreement() /*-{
-      return this.hasAgreement;
-   }-*/;
-   
-   public final native Agreement pendingAgreement() /*-{
-      return this.pendingAgreement;
-   }-*/;
-   
    public final native String docsURL() /*-{
       return this.docsURL;
    }-*/;
@@ -254,12 +275,6 @@ public class SessionInfo extends JavaScriptObject
       }
    }
   
-   public final native JsObject getProjectUIPrefs() /*-{
-      if (!this.project_ui_prefs)
-         this.project_ui_prefs = {};
-      return this.project_ui_prefs;
-   }-*/;
-   
    public final native JsArrayString getProjectOpenDocs() /*-{
       if (!this.project_open_docs)
          this.project_open_docs = {};
@@ -306,6 +321,14 @@ public class SessionInfo extends JavaScriptObject
    
    public final native String getBuildTargetDir() /*-{
       return this.build_target_dir;
+   }-*/;
+   
+   public final native BlogdownConfig getBlogdownConfig() /*-{
+      return this.blogdown_config;
+   }-*/;
+   
+   public final native boolean getIsDistillProject() /*-{
+      return this.is_distill_project;
    }-*/;
    
    public final native boolean getHasPackageSrcDir() /*-{
@@ -407,6 +430,10 @@ public class SessionInfo extends JavaScriptObject
 
    public final native boolean getCrashHandlerSettingsModifiable() /*-{
       return this.crash_handler_settings_modifiable;
+   }-*/;
+
+   public final native boolean getPromptForCrashHandlerPermission() /*-{
+      return this.prompt_for_crash_handler_permission;
    }-*/;
 
    public final native JsObject getLaunchParameters() /*-{
@@ -540,7 +567,11 @@ public class SessionInfo extends JavaScriptObject
     public final native boolean getPackratAvailable() /*-{
       return this.packrat_available;
    }-*/;
-   
+    
+    public final native boolean getRenvAvailable() /*-{
+      return this.renv_available;
+   }-*/;
+    
    public final native boolean getShowUserHomePage() /*-{
       return this.show_user_home_page;
    }-*/;
@@ -591,9 +622,21 @@ public class SessionInfo extends JavaScriptObject
    }-*/;
    
    /**
+    * @return The list of R packages we depend on
+    */
+   public final native DependencyList getPackageDependencies() /*-{
+      return this.package_dependencies;
+   }-*/;
+   
+   /**
     * @return project identifier (only meaningful in RStudio Server Pro)
     */
    public final native String getProjectId() /*-{
       return this.project_id;
+   }-*/;
+   
+   public final native JsArrayString getGraphicsBackends()
+   /*-{
+     return this.graphics_backends;
    }-*/;
 }

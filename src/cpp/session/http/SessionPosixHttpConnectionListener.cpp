@@ -1,7 +1,7 @@
 /*
  * SessionPosixHttpConnectionListener.cpp
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -16,7 +16,6 @@
 #include <session/SessionHttpConnectionListener.hpp>
 
 #include <core/system/Environment.hpp>
-#include <core/system/FileMode.hpp>
 #include <core/system/PosixSystem.hpp>
 
 #include <core/r_util/RSessionContext.hpp>
@@ -36,7 +35,7 @@ namespace session {
 namespace {
 
 // pointer to global connection listener singleton
-HttpConnectionListener* s_pHttpConnectionListener = NULL;
+HttpConnectionListener* s_pHttpConnectionListener = nullptr;
 
 }  // anonymouys namespace
 
@@ -54,7 +53,7 @@ void initializeHttpConnectionListener()
          FilePath streamPath(localPeer);
          s_pHttpConnectionListener = new LocalStreamHttpConnectionListener(
                                            streamPath,
-                                           core::system::UserReadWriteMode,
+                                           core::FileMode::USER_READ_WRITE,
                                            options.sharedSecret(),
                                            -1);
       }
@@ -122,7 +121,7 @@ void initializeHttpConnectionListener()
          FilePath localStreamPath = local_streams::streamPath(streamFile);
          s_pHttpConnectionListener = new LocalStreamHttpConnectionListener(
                                           localStreamPath,
-                                          core::system::EveryoneReadWriteMode,
+                                          core::FileMode::ALL_READ_WRITE,
                                           "", // no shared secret
                                           options.limitRpcClientUid());
       }

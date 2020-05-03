@@ -1,7 +1,7 @@
 /*
  * MathJax.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-18 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -28,12 +28,12 @@ import org.rstudio.core.client.layout.FadeOutAnimation;
 import org.rstudio.core.client.regex.Pattern;
 import org.rstudio.studio.client.common.mathjax.display.MathJaxPopupPanel;
 import org.rstudio.studio.client.rmarkdown.model.RmdChunkOptions;
-import org.rstudio.studio.client.workbench.prefs.model.UIPrefs;
-import org.rstudio.studio.client.workbench.prefs.model.UIPrefsAccessor;
+import org.rstudio.studio.client.workbench.prefs.model.UserPrefs;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ChunkOutputSize;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ChunkOutputWidget;
 import org.rstudio.studio.client.workbench.views.source.editors.text.DocDisplay;
 import org.rstudio.studio.client.workbench.views.source.editors.text.PinnedLineWidget;
+import org.rstudio.studio.client.workbench.views.source.editors.text.TextEditingTarget;
 import org.rstudio.studio.client.workbench.views.source.editors.text.DocDisplay.AnchoredSelection;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.LineWidget;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Position;
@@ -71,7 +71,7 @@ public class MathJax
    }
    
    public MathJax(DocDisplay docDisplay, DocUpdateSentinel sentinel,
-         UIPrefs prefs)
+         UserPrefs prefs)
    {
       docDisplay_ = docDisplay;
       sentinel_ = sentinel;
@@ -249,8 +249,8 @@ public class MathJax
       // preferences indicate otherwise
       if (sentinel_.getBoolProperty(
             TextEditingTargetNotebook.CONTENT_PREVIEW_INLINE, 
-            prefs_.showLatexPreviewOnCursorIdle().getValue() == 
-               UIPrefsAccessor.LATEX_PREVIEW_SHOW_ALWAYS))
+            prefs_.latexPreviewOnCursorIdle().getValue() == 
+               UserPrefs.LATEX_PREVIEW_ON_CURSOR_IDLE_ALWAYS))
       {
          boolean isLatexChunk = text.startsWith("$$") && text.endsWith("$$");
          if (isLatexChunk)
@@ -535,6 +535,10 @@ public class MathJax
          return;
       }
       
+      // don't show the popup in visual mode
+      if (sentinel_.getBoolProperty(TextEditingTarget.RMD_VISUAL_MODE, false))
+         return;
+      
       // no need to re-position popup if already showing;
       // just typeset
       if (popup_.isShowing())
@@ -715,7 +719,7 @@ public class MathJax
    
    private final DocDisplay docDisplay_;
    private final DocUpdateSentinel sentinel_;
-   private final UIPrefs prefs_;
+   private final UserPrefs prefs_;
    private final MathJaxPopupPanel popup_;
    private final MathJaxRenderQueue renderQueue_;
    private final List<HandlerRegistration> handlers_;

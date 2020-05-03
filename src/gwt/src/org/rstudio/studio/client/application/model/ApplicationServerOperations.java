@@ -1,7 +1,7 @@
 /*
  * ApplicationServerOperations.java
  *
- * Copyright (C) 2009-19 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -18,7 +18,6 @@ import com.google.gwt.core.client.JavaScriptObject;
 import org.rstudio.core.client.files.FileSystemItem;
 import org.rstudio.studio.client.server.ServerRequestCallback;
 import org.rstudio.studio.client.server.Void;
-import org.rstudio.studio.client.workbench.model.Agreement;
 import org.rstudio.studio.client.workbench.model.SessionInfo;
 import org.rstudio.studio.client.workbench.prefs.model.PrefsServerOperations;
 
@@ -40,14 +39,10 @@ public interface ApplicationServerOperations extends PrefsServerOperations
    // abort the current session
    void abort(String nextSessionProject,
               ServerRequestCallback<Void> requestCallback);
-     
-   // agree to the application agreement
-   void acceptAgreement(Agreement agreement, 
-                        ServerRequestCallback<Void> requestCallback);
-   
+
    // suspend the current session
    void suspendSession(boolean force,
-                       ServerRequestCallback<Void> requestCallback) ;
+                       ServerRequestCallback<Void> requestCallback);
 
    // handle unsaved changes completed
    void handleUnsavedChangesCompleted(
@@ -83,7 +78,9 @@ public interface ApplicationServerOperations extends PrefsServerOperations
 
    void getProductInfo(
          ServerRequestCallback<ProductInfo> requestCallback);
-   
+
+   void getProductNotice(ServerRequestCallback<ProductNotice> requestCallback);
+
    void getNewSessionUrl(String hostPageUrl,
          boolean isProject, 
          String directory,

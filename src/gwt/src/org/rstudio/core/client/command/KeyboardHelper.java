@@ -1,7 +1,7 @@
 /*
  * KeyboardHelper.java
  *
- * Copyright (C) 2009-15 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -40,6 +40,22 @@ public class KeyboardHelper
          return keyCode == 173;
       else
          return keyCode == 189;
+   }
+   
+   public static boolean isNavigationalKeycode(int keycode)
+   {
+      return (keycode == KeyCodes.KEY_TAB ||
+              keycode == KeyCodes.KEY_ENTER ||
+              keycode == KeyCodes.KEY_ESCAPE ||
+              keycode == KeyCodes.KEY_HOME ||
+              keycode == KeyCodes.KEY_END ||
+              keycode == KeyCodes.KEY_RIGHT ||
+              keycode == KeyCodes.KEY_LEFT);  
+   }
+   
+   public static boolean isControlKeycode(int keycode) 
+   {
+      return keycode < 32;
    }
    
    public static boolean isUnderscore(NativeEvent event)
@@ -151,8 +167,8 @@ public class KeyboardHelper
       
       map[111] = "/";
       
-      // Function keys
-      for (var i = 112; i <= 123; i++)
+      // Function keys (full Mac keyboard supports up to F19, some keyboard go up to F24)
+      for (var i = 112; i <= 135; i++)
          map[i] = "F" + (i - 111);
       
       map[144] = "NumLock";

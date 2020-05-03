@@ -1,7 +1,7 @@
 /*
  * DefaultGlobalDisplay.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-18 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -396,12 +396,26 @@ public class DefaultGlobalDisplay extends GlobalDisplay
    }
    
    @Override
+   public void bringWindowToFront(String name)
+   {
+      if (Desktop.isDesktop())
+         Desktop.getFrame().activateMinimalWindow(name);
+      else
+         bringWindowToFrontImpl(name);
+   }
+   
+   private static final native void bringWindowToFrontImpl(String name)
+   /*-{
+      $wnd.open("", name);
+   }-*/;
+   
+   @Override
    public void openRStudioLink(String linkName, boolean includeVersionInfo)
    {
       // build url
       final SessionInfo sessionInfo = session_.getSessionInfo();
-      String url = "https://www.rstudio.org/links/" ;
-      url += URL.encodePathSegment(linkName) ;
+      String url = "https://www.rstudio.org/links/";
+      url += URL.encodePathSegment(linkName);
       if (includeVersionInfo)
       {
          url += "?version=" + URL.encodeQueryString(sessionInfo.getRstudioVersion());
@@ -417,6 +431,8 @@ public class DefaultGlobalDisplay extends GlobalDisplay
    {
       if (Desktop.isDesktop())
          Desktop.getFrame().showFile(StringUtil.notNull(path));
+      else if (Desktop.isRemoteDesktop())
+         Desktop.getFrame().browseUrl(server_.getFileUrl(FileSystemItem.createFile(path)));
       else
          openWindow(server_.getFileUrl(FileSystemItem.createFile(path)));
    }

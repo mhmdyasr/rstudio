@@ -1,7 +1,7 @@
 /*
  * TypoNative.java
  *
- * Copyright (C) 2009-19 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -22,7 +22,7 @@ import jsinterop.annotations.JsType;
 @JsType(isNative = true, namespace = JsPackage.GLOBAL, name = "Typo")
 public class TypoNative
 {
-   TypoNative(String dictionary, JavaScriptObject affData, JavaScriptObject wordsData, JavaScriptObject settings) {}
+   TypoNative(String dictionary, String affData, String wordsData, JavaScriptObject settings) {}
 
    public native boolean check(String word);
    public native String[] suggest(String word);

@@ -1,4 +1,4 @@
-FROM opensuse/leap:15.0
+FROM opensuse/leap:15.1
 
 # needed to build RPMs
 RUN zypper --non-interactive addrepo http://download.opensuse.org/repositories/systemsmanagement:wbem:deps/openSUSE_Tumbleweed/systemsmanagement:wbem:deps.repo
@@ -9,6 +9,7 @@ RUN zypper --non-interactive --gpg-auto-import-keys refresh && \
     ant \
     boost-devel \
     clang \
+    curl \
     expect \
     fakeroot \
     gcc \
@@ -21,20 +22,25 @@ RUN zypper --non-interactive --gpg-auto-import-keys refresh && \
     libcurl-devel \
     libuser-devel \
     libuuid-devel \
+    libxml2-devel \
     libXcursor-devel \
     libXrandr-devel \
     lsof \
     make \
     openssl-devel \
+    p7zip \
     pam-devel \
     pango-devel \
+    postgresql-devel \
     python \
     python-xml \
     R \
     rpm-build \
+    sqlite-devel \
     sudo \
     tar \
     unzip \
+    valgrind \
     wget \
     xml-commons-apis \
     zlib-devel
@@ -50,7 +56,7 @@ RUN bash /tmp/install-dependencies
 
 # install crashpad and its dependencies
 COPY dependencies/common/install-crashpad /tmp/
-RUN bash /tmp/install-crashpad
+RUN bash /tmp/install-crashpad opensuse15
 
 # set github login from build argument if defined
 ARG GITHUB_LOGIN
@@ -59,17 +65,23 @@ ENV RSTUDIO_GITHUB_LOGIN=$GITHUB_LOGIN
 # ensure we use the java 8 compiler
 RUN update-alternatives --set java /usr/lib64/jvm/jre-1.8.0-openjdk/bin/java
 
-# install common dependencies
+# copy common dependency installation scripts
 RUN mkdir -p /opt/rstudio-tools/dependencies/common
-COPY dependencies/common/* /opt/rstudio-tools/dependencies/common/
+COPY dependencies/common/ /opt/rstudio-tools/dependencies/common/
+
+# copy panmirror project setup (so install-common can install needed deps)
+RUN mkdir -p /opt/rstudio-tools/panmirror
+COPY src/gwt/panmirror/src/editor/yarn.lock /opt/rstudio-tools/panmirror/
+COPY src/gwt/panmirror/src/editor/package.json /opt/rstudio-tools/panmirror/
+
+# install common dependencies
 RUN cd /opt/rstudio-tools/dependencies/common && /bin/bash ./install-common
 
 # install Qt SDK
-COPY dependencies/linux/install-qt-sdk /tmp/
-RUN mkdir -p /opt/RStudio-QtSDK && \
-    export QT_SDK_DIR=/opt/RStudio-QtSDK/Qt5.12.1 && \
-    export QT_QPA_PLATFORM=minimal && \
-    /tmp/install-qt-sdk
+COPY dependencies/common/install-qt.sh /tmp/
+COPY dependencies/linux/install-qt-linux /tmp/
+RUN export QT_VERSION=5.12.8 && \
+    cd /tmp && /bin/bash ./install-qt-linux
 
 # install GnuPG 1.4 from source (needed for release signing)
 RUN cd /tmp && \

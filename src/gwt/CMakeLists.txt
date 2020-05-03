@@ -1,7 +1,7 @@
 #
 # CMakeLists.txt
 #
-# Copyright (C) 2009-18 by RStudio, Inc.
+# Copyright (C) 2009-19 by RStudio, PBC
 #
 # Unless you have received this program directly from RStudio pursuant
 # to the terms of a commercial license agreement with RStudio, then
@@ -13,14 +13,10 @@
 #
 #
 
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.4.3)
 project (RSTUDIO_GWT)
 
-# check for externals
-set(GWT_LIB_DIR "/opt/rstudio-tools/dependencies/common/gwt/lib")
-if(NOT EXISTS "${GWT_LIB_DIR}")
-   set(GWT_LIB_DIR "lib")
-endif()
+set(GWT_LIB_DIR "lib")
 
 # define output dirs
 if("${GWT_BIN_DIR}" STREQUAL "")
@@ -33,13 +29,22 @@ if("${GWT_EXTRAS_DIR}" STREQUAL "")
    set(GWT_EXTRAS_DIR "extras")
 endif()
 
-# invoke ant to build
+# allow opt in / out of GWT build
+# mainly for faster iteration in builds
 set(GWT_BUILD Yes)
 if(DEFINED ENV{GWT_BUILD})
    set(GWT_BUILD $ENV{GWT_BUILD})
 endif()
 
+# set main module (allow override from envvar)
+set(GWT_MAIN_MODULE "RStudio")
+if(DEFINED ENV{GWT_MAIN_MODULE})
+   set(GWT_MAIN_MODULE $ENV{GWT_MAIN_MODULE})
+endif()
+
 if(GWT_BUILD)
+
+   # invoke ant to build
    add_custom_target(gwt_build ALL)
    add_custom_command(
       TARGET gwt_build
@@ -47,19 +52,22 @@ if(GWT_BUILD)
       COMMAND ant -Dbuild.dir="${GWT_BIN_DIR}"
                   -Dwww.dir="${GWT_WWW_DIR}"
                   -Dextras.dir="${GWT_EXTRAS_DIR}"
-                  -Dlib.dir="${GWT_LIB_DIR}")
+                  -Dlib.dir="${GWT_LIB_DIR}"
+                  -Dgwt.main.module="org.rstudio.studio.${GWT_MAIN_MODULE}")
+
+   # create test script and copy to binary directory with executable permissions
+   configure_file(${CMAKE_CURRENT_SOURCE_DIR}/gwt-unit-tests.sh.in
+                  ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/gwt-unit-tests.sh)
+   file(COPY ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/gwt-unit-tests.sh
+             DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
+             FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ
+             GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+   
+   # installation rules
+   install(DIRECTORY www DESTINATION ${RSTUDIO_INSTALL_SUPPORTING})
+   install(DIRECTORY "${GWT_WWW_DIR}" DESTINATION ${RSTUDIO_INSTALL_SUPPORTING})
+   install(DIRECTORY "${GWT_EXTRAS_DIR}/rstudio/symbolMaps/"
+           DESTINATION ${RSTUDIO_INSTALL_SUPPORTING}/www-symbolmaps)
+
 endif()
 
-# create test script and copy to binary directory with executable permissions
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/gwt-unit-tests.sh.in
-               ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/gwt-unit-tests.sh)
-file(COPY ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/gwt-unit-tests.sh
-          DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
-          FILE_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ
-          GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
-
-# installation rules
-install(DIRECTORY www DESTINATION ${RSTUDIO_INSTALL_SUPPORTING})
-install(DIRECTORY "${GWT_WWW_DIR}" DESTINATION ${RSTUDIO_INSTALL_SUPPORTING})
-install(DIRECTORY "${GWT_EXTRAS_DIR}/rstudio/symbolMaps/"
-        DESTINATION ${RSTUDIO_INSTALL_SUPPORTING}/www-symbolmaps)

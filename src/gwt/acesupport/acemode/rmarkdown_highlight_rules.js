@@ -1,7 +1,7 @@
 /*
  * markdown_highlight_rules.js
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * The Initial Developer of the Original Code is
  * Ajax.org B.V.
@@ -189,7 +189,7 @@ oop.inherits(RMarkdownHighlightRules, TextHighlightRules);
    this.$reChunkEndString =
       "^(?:[ ]{4})?`{3,}\\s*$";
 
-   this.$reCppChunkStartString        = engineRegex("[Rr]cpp");
+   this.$reCppChunkStartString        = engineRegex("(?:[rR][cC]pp|[cC](?:pp)?)");
    this.$reMarkdownChunkStartString   = engineRegex("block");
    this.$rePerlChunkStartString       = engineRegex("perl");
    this.$rePythonChunkStartString     = engineRegex("python");

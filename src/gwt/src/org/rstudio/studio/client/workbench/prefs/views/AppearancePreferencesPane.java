@@ -1,7 +1,7 @@
 /*
  * AppearancePreferencesPane.java
  *
- * Copyright (C) 2009-18 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -14,6 +14,7 @@
  */
 package org.rstudio.studio.client.workbench.prefs.views;
 
+import com.google.gwt.core.client.JsArrayString;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.core.client.Scheduler.RepeatingCommand;
 import com.google.gwt.dom.client.SelectElement;
@@ -28,8 +29,11 @@ import com.google.inject.Inject;
 
 import org.rstudio.core.client.Debug;
 import org.rstudio.core.client.StringUtil;
+import org.rstudio.core.client.js.JsUtil;
+import org.rstudio.core.client.prefs.RestartRequirement;
 import org.rstudio.core.client.resources.ImageResource2x;
 import org.rstudio.core.client.theme.ThemeFonts;
+import org.rstudio.core.client.widget.FontDetector;
 import org.rstudio.core.client.widget.Operation;
 import org.rstudio.core.client.widget.SelectWidget;
 import org.rstudio.core.client.widget.ThemedButton;
@@ -39,44 +43,57 @@ import org.rstudio.studio.client.application.DesktopInfo;
 import org.rstudio.studio.client.common.FileDialogs;
 import org.rstudio.studio.client.common.GlobalDisplay;
 import org.rstudio.studio.client.common.dependencies.DependencyManager;
+import org.rstudio.studio.client.server.ServerError;
+import org.rstudio.studio.client.server.ServerRequestCallback;
 import org.rstudio.studio.client.workbench.WorkbenchContext;
-import org.rstudio.studio.client.workbench.prefs.model.RPrefs;
-import org.rstudio.studio.client.workbench.prefs.model.UIPrefs;
+import org.rstudio.studio.client.workbench.prefs.model.UserPrefs;
+import org.rstudio.studio.client.workbench.prefs.model.UserState;
 import org.rstudio.studio.client.workbench.views.source.editors.text.themes.AceTheme;
 import org.rstudio.studio.client.workbench.views.source.editors.text.themes.AceThemes;
+import org.rstudio.studio.client.workbench.views.source.editors.text.themes.model.ThemeServerOperations;
 
 import java.util.HashMap;
+import java.util.Set;
+import java.util.TreeSet;
 
 public class AppearancePreferencesPane extends PreferencesPane
 {
    
    @Inject
    public AppearancePreferencesPane(PreferencesDialogResources res,
-                                    UIPrefs uiPrefs,
+                                    UserPrefs userPrefs,
+                                    UserState userState,
                                     final AceThemes themes,
                                     WorkbenchContext workbenchContext,
                                     GlobalDisplay globalDisplay,
                                     DependencyManager dependencyManager,
-                                    FileDialogs fileDialogs)
+                                    FileDialogs fileDialogs,
+                                    ThemeServerOperations server)
    {
       res_ = res;
-      uiPrefs_ = uiPrefs;
+      userPrefs_ = userPrefs;
+      userState_ = userState;
       globalDisplay_ = globalDisplay;
       dependencyManager_ = dependencyManager;
+      server_ = server;
       
       VerticalPanel leftPanel = new VerticalPanel();
       
       relaunchRequired_ = false;
 
       // dark-grey theme used to be derived from default, now also applies to sky
-      if (StringUtil.equals(uiPrefs_.getFlatTheme().getValue(), "dark-grey"))
-        uiPrefs_.getFlatTheme().setGlobalValue("default");
+      if (StringUtil.equals(userPrefs_.globalTheme().getValue(), "dark-grey"))
+        userPrefs_.globalTheme().setGlobalValue(UserPrefs.GLOBAL_THEME_DEFAULT);
 
-      final String originalTheme = uiPrefs_.getFlatTheme().getValue();
+      final String originalTheme = userPrefs_.globalTheme().getValue();
 
       flatTheme_ = new SelectWidget("RStudio theme:",
                                 new String[]{"Classic", "Modern", "Sky"},
-                                new String[]{"classic", "default", "alternate"},
+                                new String[]{
+                                      UserPrefs.GLOBAL_THEME_CLASSIC,
+                                      UserPrefs.GLOBAL_THEME_DEFAULT, 
+                                      UserPrefs.GLOBAL_THEME_ALTERNATE
+                                    },
                                 false);
       flatTheme_.addStyleName(res.styles().themeChooser());
       flatTheme_.getListBox().setWidth("95%");
@@ -84,12 +101,12 @@ public class AppearancePreferencesPane extends PreferencesPane
          relaunchRequired_ = (StringUtil.equals(originalTheme, "classic") && !StringUtil.equals(flatTheme_.getValue(), "classic")) ||
             (StringUtil.equals(flatTheme_.getValue(), "classic") && !StringUtil.equals(originalTheme, "classic")));
 
-      String themeAlias = uiPrefs_.getFlatTheme().getGlobalValue();
+      String themeAlias = userPrefs_.globalTheme().getGlobalValue();
       flatTheme_.setValue(themeAlias);
 
       leftPanel.add(flatTheme_);
 
-      if (Desktop.isDesktop())
+      if (Desktop.hasDesktopFrame())
       {
          int initialIndex = -1;
          int normalIndex = -1;
@@ -126,23 +143,36 @@ public class AppearancePreferencesPane extends PreferencesPane
          leftPanel.add(zoomLevel_);
          
          zoomLevel_.getListBox().addChangeHandler(event -> updatePreviewZoomLevel());
+      }
       
+      String[] fonts = new String[] {};
+      
+      if (Desktop.isDesktop())
+      {
+         // In desktop mode, get the list of installed fonts from Qt
          String fontList = DesktopInfo.getFixedWidthFontList();
          
-         String[] fonts = fontList.isEmpty()
-               ? new String[] {}
-               : fontList.split("\\n");
-               
-         String fontFaceLabel = fontList.isEmpty()
-               ? "Editor font (loading...):"
-               : "Editor font:";
-
          if (fontList.isEmpty())
             registerFontListReadyCallback();
-         
-         fontFace_ = new SelectWidget(fontFaceLabel, fonts, fonts, false, false, false);
-         fontFace_.getListBox().setWidth("95%");
+         else
+            fonts = fontList.split("\\n");
+      }
+      else
+      {
+         // In server mode, get the installed set of fonts by querying the server
+         getInstalledFontList();
+      }
 
+      String fontFaceLabel = fonts.length == 0 
+            ? "Editor font (loading...):"
+            : "Editor font:";
+
+      fontFace_ = new SelectWidget(fontFaceLabel, fonts, fonts, false, false, false);
+      fontFace_.getListBox().setWidth("95%");
+      
+      if (Desktop.isDesktop())
+      {
+         // Get the fixed width font set in desktop mode
          String value = DesktopInfo.getFixedWidthFont();
          String label = value.replaceAll("\\\"", "");
          if (!fontFace_.setValue(label))
@@ -150,21 +180,33 @@ public class AppearancePreferencesPane extends PreferencesPane
             fontFace_.insertValue(0, label, value);
             fontFace_.setValue(value);
          }
-         initialFontFace_ = StringUtil.notNull(fontFace_.getValue());
-         leftPanel.add(fontFace_);
-         fontFace_.addChangeHandler(new ChangeHandler()
-         {
-            @Override
-            public void onChange(ChangeEvent event)
-            {
-               String font = fontFace_.getValue();
-               if (font != null)
-                  preview_.setFont(font);
-               else
-                  preview_.setFont(ThemeFonts.getFixedWidthFont());
-            }
-         });
       }
+      else
+      {
+         // In server mode, there's always a Default option which uses a
+         // browser-specific font.
+         fontFace_.insertValue(0, DEFAULT_FONT_NAME, DEFAULT_FONT_VALUE);
+      }
+
+      initialFontFace_ = StringUtil.notNull(fontFace_.getValue());
+
+      leftPanel.add(fontFace_);
+      fontFace_.addChangeHandler(new ChangeHandler()
+      {
+         @Override
+         public void onChange(ChangeEvent event)
+         {
+            String font = fontFace_.getValue();
+            if (font == null || StringUtil.equals(font, DEFAULT_FONT_VALUE))
+            {
+               preview_.setFont(ThemeFonts.getFixedWidthFont(), false);
+            }
+            else
+            {
+               preview_.setFont(font, !Desktop.hasDesktopFrame());
+            }
+         }
+      });
 
       String[] labels = {"7", "8", "9", "10", "11", "12", "13", "14", "16", "18", "24", "36"};
       String[] values = new String[labels.length];
@@ -176,7 +218,7 @@ public class AppearancePreferencesPane extends PreferencesPane
                                    values,
                                    false);
       fontSize_.getListBox().setWidth("95%");
-      if (!fontSize_.setValue(uiPrefs.fontSize().getGlobalValue() + ""))
+      if (!fontSize_.setValue(userPrefs.fontSizePoints().getGlobalValue() + ""))
          fontSize_.getListBox().setSelectedIndex(3);
       fontSize_.getListBox().addChangeHandler(new ChangeHandler()
       {
@@ -204,7 +246,7 @@ public class AppearancePreferencesPane extends PreferencesPane
       });
       theme_.addStyleName(res.styles().themeChooser());
    
-      AceTheme currentTheme = uiPrefs_.theme().getGlobalValue();
+      AceTheme currentTheme = userState_.theme().getGlobalValue().cast();
       addThemeButton_ = new ThemedButton("Add...", event ->
          fileDialogs.openFile(
             "Theme Files (*.tmTheme *.rstheme)",
@@ -282,7 +324,7 @@ public class AppearancePreferencesPane extends PreferencesPane
    
    private void removeTheme(String themeName, AceThemes themes, Operation afterOperation)
    {
-      AceTheme currentTheme = uiPrefs_.theme().getGlobalValue();
+      AceTheme currentTheme = userState_.theme().getGlobalValue().cast();
       if (StringUtil.equalsIgnoreCase(currentTheme.getName(), themeName))
       {
          showCantRemoveActiveThemeDialog(currentTheme.getName());
@@ -365,7 +407,7 @@ public class AppearancePreferencesPane extends PreferencesPane
          
             // It's possible the current theme was removed outside the context of
             // RStudio, so choose a default if it can't be found.
-            AceTheme currentTheme = uiPrefs_.theme().getGlobalValue();
+            AceTheme currentTheme = userState_.theme().getGlobalValue().cast();
             if (!themeList_.containsKey(currentTheme.getName()))
             {
                StringBuilder warningMsg = new StringBuilder();
@@ -376,7 +418,7 @@ public class AppearancePreferencesPane extends PreferencesPane
                   .append("default theme: \"");
                
                currentTheme = AceTheme.createDefault(currentTheme.isDark());
-               uiPrefs_.theme().setGlobalValue(currentTheme);
+               userState_.theme().setGlobalValue(currentTheme);
                preview_.setTheme(currentTheme.getUrl());
                
                warningMsg.append(currentTheme.getName())
@@ -417,7 +459,7 @@ public class AppearancePreferencesPane extends PreferencesPane
    private void updatePreviewZoomLevel()
    {
       // no zoom preview on desktop
-      if (Desktop.isDesktop())
+      if (Desktop.hasDesktopFrame())
       {
          preview_.setZoomLevel(Double.parseDouble(zoomLevel_.getValue()) /
                                DesktopInfo.getZoomLevel());
@@ -527,32 +569,61 @@ public class AppearancePreferencesPane extends PreferencesPane
    }
    
    @Override
-   protected void initialize(RPrefs prefs)
+   protected void initialize(UserPrefs prefs)
    { 
    }
 
    @Override
-   public boolean onApply(RPrefs rPrefs)
+   public RestartRequirement onApply(UserPrefs rPrefs)
    {
-      boolean restartRequired = super.onApply(rPrefs);
+      RestartRequirement restartRequirement = super.onApply(rPrefs);
 
-      double fontSize = Double.parseDouble(fontSize_.getValue());
-      uiPrefs_.fontSize().setGlobalValue(fontSize);
-      if (!StringUtil.equals(theme_.getValue(), uiPrefs_.theme().getGlobalValue().getName()))
+      if (relaunchRequired_)
+         restartRequirement.setUiReloadRequired(true);
+
+      String themeName = flatTheme_.getValue();
+      if (!StringUtil.equals(themeName, userPrefs_.globalTheme().getGlobalValue()))
       {
-         uiPrefs_.theme().setGlobalValue(themeList_.get(theme_.getValue()));
+         userPrefs_.globalTheme().setGlobalValue(themeName, false);
       }
       
-      if (Desktop.isDesktop())
+      double fontSize = Double.parseDouble(fontSize_.getValue());
+      userPrefs_.fontSizePoints().setGlobalValue(fontSize);
+      if (!StringUtil.equals(theme_.getValue(), userPrefs_.editorTheme().getGlobalValue()))
       {
-         if (!StringUtil.equals(initialFontFace_, fontFace_.getValue()))
-         {
-            String fontFace = fontFace_.getValue();
-            initialFontFace_ = fontFace;
-            Desktop.getFrame().setFixedWidthFont(fontFace);
-            restartRequired = true;
-         }
+         userState_.theme().setGlobalValue(themeList_.get(theme_.getValue()));
+         userPrefs_.editorTheme().setGlobalValue(theme_.getValue(), false);
+      }
+      
+     if (!StringUtil.equals(initialFontFace_, fontFace_.getValue()))
+     {
+        String fontFace = fontFace_.getValue();
+        initialFontFace_ = fontFace;
+        if (Desktop.hasDesktopFrame())
+        {
+           // In desktop mode the font is stored in a per-machine file since
+           // the font list varies between machines.
+           Desktop.getFrame().setFixedWidthFont(fontFace);
+        }
+        else
+        {
+           if (StringUtil.equals(fontFace, DEFAULT_FONT_VALUE))
+           {
+              // User has chosen the default font face
+              userPrefs_.serverEditorFontEnabled().setGlobalValue(false);
+           }
+           else
+           {
+              // User has chosen a specific font
+              userPrefs_.serverEditorFontEnabled().setGlobalValue(true);
+              userPrefs_.serverEditorFont().setGlobalValue(fontFace);
+           }
+        }
+        restartRequirement.setUiReloadRequired(true);
+     }
          
+      if (Desktop.hasDesktopFrame())
+      {
          if (!StringUtil.equals(initialZoomLevel_, zoomLevel_.getValue()))
          {
             double zoomLevel = Double.parseDouble(zoomLevel_.getValue());
@@ -561,14 +632,7 @@ public class AppearancePreferencesPane extends PreferencesPane
          }
       }
 
-      String themeName = flatTheme_.getValue();
-
-      if (!StringUtil.equals(themeName, uiPrefs_.getFlatTheme().getGlobalValue()))
-      {
-         uiPrefs_.getFlatTheme().setGlobalValue(themeName);
-      }
-      
-      return restartRequired || relaunchRequired_;
+      return restartRequirement;
    }
 
    @Override
@@ -582,7 +646,7 @@ public class AppearancePreferencesPane extends PreferencesPane
    
       var self = this;
       $wnd.onFontListReady = $entry(function() {
-      	self.@org.rstudio.studio.client.workbench.prefs.views.AppearancePreferencesPane::onFontListReady()();
+         self.@org.rstudio.studio.client.workbench.prefs.views.AppearancePreferencesPane::onFontListReady()();
       });
    
    }-*/;
@@ -607,19 +671,82 @@ public class AppearancePreferencesPane extends PreferencesPane
                return true;
          
             String[] fontList = fonts.split("\\n");
-            String value = fontFace_.getValue();
-            value = value.replaceAll("\\\"", "");
-            fontFace_.setLabel("Editor font:");
-            fontFace_.setChoices(fontList, fontList);
-            fontFace_.setValue(value);
+            populateFontList(fontList);
             return false;
          }
          
       }, 100);
    }
+   
+   private void getInstalledFontList()
+   {
+      // Search for installed fixed-width fonts on this web browser.
+      final Set<String> browserFonts = new TreeSet<>();
+      JsArrayString candidates = userPrefs_.browserFixedWidthFonts().getGlobalValue();
+      for (String candidate: JsUtil.asIterable(candidates))
+      {
+         if (FontDetector.isFontSupported(candidate))
+         {
+            browserFonts.add(candidate);
+         }
+      }
+      
+      server_.getInstalledFonts(new ServerRequestCallback<JsArrayString>()
+      {
+         @Override
+         public void onResponseReceived(JsArrayString fonts)
+         {
+            browserFonts.addAll(JsUtil.toList(fonts));
+            populateFontList(browserFonts.toArray(new String[browserFonts.size()]));
+            fontFace_.insertValue(0, DEFAULT_FONT_NAME, DEFAULT_FONT_VALUE);
+
+            String font = null;
+            if (userPrefs_.serverEditorFontEnabled().getValue())
+            {
+               // Use the user's supplied font
+               font = userPrefs_.serverEditorFont().getValue();
+            }
+            
+            if (StringUtil.isNullOrEmpty(font))
+            {
+               // No font selected
+               fontFace_.setValue(DEFAULT_FONT_VALUE);
+            }
+            else
+            {
+               // If there's a non-empty, enabled font, set it as the default
+               fontFace_.setValue(font);
+               preview_.setFont(font, true);
+            }
+
+            initialFontFace_ = StringUtil.notNull(fontFace_.getValue());
+         }
+
+         @Override
+         public void onError(ServerError error)
+         {
+            // Change label so it doesn't load indefinitely
+            fontFace_.setLabel("Editor font:");
+
+            Debug.logError(error);
+         }
+      });
+   }
+   
+   private void populateFontList(String[] fontList)
+   {
+      String value = fontFace_.getValue();
+      if (!StringUtil.isNullOrEmpty(value))
+         value = value.replaceAll("\\\"", "");
+      fontFace_.setLabel("Editor font:");
+      fontFace_.setChoices(fontList, fontList);
+      fontFace_.setValue(value);
+   }
 
    private final PreferencesDialogResources res_;
-   private final UIPrefs uiPrefs_;
+   private final UserPrefs userPrefs_;
+   private final UserState userState_;
+   private SelectWidget helpFontSize_;
    private SelectWidget fontSize_;
    private SelectWidget theme_;
    private ThemedButton addThemeButton_;
@@ -635,6 +762,10 @@ public class AppearancePreferencesPane extends PreferencesPane
    private HashMap<String, AceTheme> themeList_;
    private final GlobalDisplay globalDisplay_;
    private final DependencyManager dependencyManager_;
+   private final ThemeServerOperations server_;
+   
+   private final static String DEFAULT_FONT_NAME = "(Default)";
+   private final static String DEFAULT_FONT_VALUE = "__default__";
    
    private static final String CODE_SAMPLE =
          "# plotting of R objects\n" +

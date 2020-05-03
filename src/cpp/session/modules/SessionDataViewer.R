@@ -1,7 +1,7 @@
 #
 # SessionDataViewer.R
 #
-# Copyright (C) 2009-18 by RStudio, Inc.
+# Copyright (C) 2009-20 by RStudio, PBC
 #
 # Unless you have received this program directly from RStudio pursuant
 # to the terms of a commercial license agreement with RStudio, then
@@ -249,13 +249,15 @@
     {
       # create a temporary frame to hold the value; this is necessary because
       # "x" is a function argument and therefore a promise whose value won't
-      # be bound via substitute() below
-      coerced <- x
+      # be bound via substitute() below. we use a random-looking name so we 
+      # can spot it later when relabeling columns.
+      `__RSTUDIO_VIEWER_COLUMN__` <- x
 
       # perform the actual coercion in the global environment; this is 
       # necessary because we want to honor as.data.frame overrides of packages
       # which are loaded after tools:rstudio in the search path
-      frame <- eval(substitute(as.data.frame(coerced, optional = TRUE)), 
+      frame <- eval(substitute(as.data.frame(`__RSTUDIO_VIEWER_COLUMN__`, 
+                                             optional = TRUE)), 
                     envir = globalenv())
     },
     error = function(e)
@@ -265,7 +267,7 @@
     # as.data.frame uses the name of its argument to label unlabeled columns,
     # so label these back to the original name
     if (!is.null(frame) && !is.null(names(frame)))
-      names(frame)[names(frame) == "x"] <- name
+      names(frame)[names(frame) == "__RSTUDIO_VIEWER_COLUMN__"] <- name
     x <- frame 
   }
 
@@ -334,7 +336,7 @@
   x
 })
 
-.rs.addFunction("applyTransform", function(x, filtered, search, col, dir) 
+.rs.addFunction("applyTransform", function(x, filtered, search, cols, dirs)
 {
   # mark encoding on character inputs if not already marked
   filtered <- vapply(filtered, function(colfilter) {
@@ -412,22 +414,28 @@
   }
 
   # apply sort
-  if (col > 0 && length(x[[col]]) > 0)
+  if (length(cols) > 0)
   {
-    if (is.list(x[[col]][[1]]) || length(x[[col]][[1]]) > 1)
+    vals <- list()
+    for (i in length(cols))
     {
-      # extract the first value from each cell for ordering (handle
-      # vector-valued columns gracefully)
-      x <- as.data.frame(x[order(vapply(x[[col]], `[`, 0, 1), 
-                                 decreasing = identical(dir, "desc")), ,
-                           drop = FALSE])
+      idx <- cols[[i]]
+      if (length(x[[idx]]) > 0)
+      {
+        if (identical(dirs[[i]], "asc"))
+        {
+          vals <- append(vals, list(x[[idx]]))
+        }
+        else
+        {
+          vals <- append(vals, list(-xtfrm(x[[idx]])))
+        }
+      }
     }
-    else
+
+    if (length(vals) > 0)
     {
-      # skip the expensive vapply when we're dealing with scalars
-      x <- as.data.frame(x[order(x[[col]], 
-                                 decreasing = identical(dir, "desc")), ,
-                           drop = FALSE])
+      x <- x[do.call(order, vals), , drop = FALSE]
     }
   }
 
@@ -554,8 +562,9 @@
 })
 
 .rs.addFunction("viewHook", function(original, x, title) {
-   # remember the expression from which the data was generated
-   expr <- deparse(substitute(x))
+   
+  # remember the expression from which the data was generated
+   expr <- deparse(substitute(x), backtick = TRUE)
 
    # generate title if necessary (from deparsed expr)
    if (missing(title))

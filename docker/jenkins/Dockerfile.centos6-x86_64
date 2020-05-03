@@ -8,6 +8,7 @@ RUN yum install -y \
     boost-devel \
     bzip2-devel \
     cmake \
+    curl \
     expect \
     gcc \
     gcc-c++ \
@@ -19,19 +20,24 @@ RUN yum install -y \
     libcap-devel \ 
     libffi \
     libuuid-devel \
+    libxml2-devel \
     lsof \
     make \
     openssl-devel \
     pam-devel \
     pango-devel \
+    postgresql-devel \
     R \
     rpmdevtools \
     rpmsign \
     rrdtool \
+    sqlite-devel \
     sudo \
     wget \
     xml-commons-apis \
-    zlib-devel
+    zlib-devel \
+    libuser-devel \
+    valgrind
 
 # update gcc for C++11 support
 RUN wget http://people.centos.org/tru/devtools-2/devtools-2.repo -O /etc/yum.repos.d/devtools-2.repo
@@ -56,10 +62,17 @@ RUN bash /tmp/install-dependencies
 ARG GITHUB_LOGIN
 ENV RSTUDIO_GITHUB_LOGIN=$GITHUB_LOGIN
 
+# copy common dependency installation scripts
+RUN mkdir -p /opt/rstudio-tools/dependencies/common
+COPY dependencies/common/ /opt/rstudio-tools/dependencies/common/
+
+# copy panmirror project setup (so install-common can install needed deps)
+RUN mkdir -p /opt/rstudio-tools/panmirror
+COPY src/gwt/panmirror/src/editor/yarn.lock /opt/rstudio-tools/panmirror/
+COPY src/gwt/panmirror/src/editor/package.json /opt/rstudio-tools/panmirror/
+
 # install common dependencies
 ENV RSTUDIO_DISABLE_CRASHPAD=1
-RUN mkdir -p /opt/rstudio-tools/dependencies/common
-COPY dependencies/common/* /opt/rstudio-tools/dependencies/common/
 RUN cd /opt/rstudio-tools/dependencies/common && /bin/bash ./install-common
 
 # create jenkins user, make sudo. try to keep this toward the bottom for less cache busting

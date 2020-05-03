@@ -1,7 +1,7 @@
 /*
  * PosixSystem.cpp
  *
- * Copyright (C) 2009-17 by RStudio, Inc.
+ * Copyright (C) 2009-19 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -18,10 +18,10 @@
 #include <stdio.h>
 
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include <boost/algorithm/string.hpp>
-#include <boost/foreach.hpp>
 #include <boost/range/as_array.hpp>
 
 #include <signal.h>
@@ -40,10 +40,13 @@
 
 #include <uuid/uuid.h>
 
+#include <shared_core/system/PosixSystem.hpp>
+
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <sys/proc_info.h>
 #include <libproc.h>
+#include <gsl/gsl>
 #endif
 
 #ifndef __APPLE__
@@ -63,17 +66,13 @@
 #include <core/RegexUtils.hpp>
 #include <core/Algorithm.hpp>
 #include <core/DateTime.hpp>
-#include <core/Error.hpp>
-
-#include <core/FilePath.hpp>
 #include <core/FileInfo.hpp>
 
 #include <core/FileSerializer.hpp>
 #include <core/Exec.hpp>
 #include <core/LogOptions.hpp>
-#include <core/SyslogLogWriter.hpp>
 #include <core/StringUtils.hpp>
-#include <core/SafeConvert.hpp>
+#include <shared_core/SafeConvert.hpp>
 #include <core/FileSerializer.hpp>
 #include <core/Thread.hpp>
 
@@ -85,6 +84,11 @@
 #include <core/system/Process.hpp>
 #include <core/system/ShellUtils.hpp>
 
+
+#include <shared_core/Error.hpp>
+#include <shared_core/FilePath.hpp>
+#include <shared_core/system/User.hpp>
+
 #include "config.h"
 
 namespace rstudio {
@@ -92,24 +96,6 @@ namespace core {
 namespace system {
 
 namespace {
-
-Error ignoreSig(int signal)
-{
-   struct sigaction sa;
-   ::memset(&sa, 0, sizeof sa);
-   sa.sa_handler = SIG_IGN;
-   int result = ::sigaction(signal, &sa, NULL);
-   if (result != 0)
-   {
-      Error error = systemError(result, ERROR_LOCATION);
-      error.addProperty("signal", signal);
-      return error;
-   }
-   else
-   {
-      return Success();
-   }
-}
    
 int signalForType(SignalType type)
 {
@@ -154,26 +140,26 @@ int signalForType(SignalType type)
 
 Error realPath(const FilePath& filePath, FilePath* pRealPath)
 {
-   std::string path = string_utils::utf8ToSystem(filePath.absolutePath());
+   std::string path = string_utils::utf8ToSystem(filePath.getAbsolutePath());
 
    char buffer[PATH_MAX*2];
    char* realPath = ::realpath(path.c_str(), buffer);
-   if (realPath == NULL)
+   if (realPath == nullptr)
    {
       Error error = systemError(errno, ERROR_LOCATION);
       error.addProperty("path", filePath);
       return error;
    }
 
-  *pRealPath = FilePath(string_utils::systemToUtf8(realPath));
-  return Success();
+   *pRealPath = FilePath(string_utils::systemToUtf8(realPath));
+   return Success();
 }
 
 Error realPath(const std::string& path, FilePath* pRealPath)
 {
    char buffer[PATH_MAX*2];
    char* realPath = ::realpath(path.c_str(), buffer);
-   if (realPath == NULL)
+   if (realPath == nullptr)
    {
       Error error = systemError(errno, ERROR_LOCATION);
       error.addProperty("path", path);
@@ -188,19 +174,19 @@ void initHook()
 }
 
 // statics defined in System.cpp
-extern boost::shared_ptr<LogOptions> s_logOptions;
+extern boost::shared_ptr<log::LogOptions> s_logOptions;
 extern boost::recursive_mutex s_loggingMutex;
 extern std::string s_programIdentity;
 
 Error initializeSystemLog(const std::string& programIdentity,
-                          int logLevel,
+                          log::LogLevel logLevel,
                           bool enableConfigReload)
 {
    RECURSIVE_LOCK_MUTEX(s_loggingMutex)
    {
       // create default syslog logger options
-      SysLoggerOptions options;
-      s_logOptions.reset(new LogOptions(programIdentity, logLevel, kLoggerTypeSysLog, options));
+      log::SysLogOptions options;
+      s_logOptions.reset(new log::LogOptions(programIdentity, logLevel, log::LoggerType::kSysLog, options));
       s_programIdentity = programIdentity;
 
       Error error = initLog();
@@ -254,7 +240,7 @@ void initializeLogConfigReload()
    sigemptyset(&waitMask);
    sigaddset(&waitMask, SIGHUP);
 
-   int result = ::pthread_sigmask(SIG_BLOCK, &waitMask, NULL);
+   int result = ::pthread_sigmask(SIG_BLOCK, &waitMask, nullptr);
    if (result != 0)
       return;
 
@@ -264,12 +250,12 @@ void initializeLogConfigReload()
    
 Error ignoreTerminalSignals()
 {
-   ExecBlock ignoreBlock ;
+   ExecBlock ignoreBlock;
    ignoreBlock.addFunctions()
-      (boost::bind(ignoreSig, SIGHUP))
-      (boost::bind(ignoreSig, SIGTSTP))
-      (boost::bind(ignoreSig, SIGTTOU))
-      (boost::bind(ignoreSig, SIGTTIN));
+      (boost::bind(posix::ignoreSignal, SIGHUP))
+      (boost::bind(posix::ignoreSignal, SIGTSTP))
+      (boost::bind(posix::ignoreSignal, SIGTTOU))
+      (boost::bind(posix::ignoreSignal, SIGTTIN));
    return ignoreBlock.execute();
 }
       
@@ -312,7 +298,7 @@ Error reapChildren()
    sa.sa_flags = SA_RESTART;
    
    // install it
-   int result = ::sigaction(SIGCHLD, &sa, NULL);
+   int result = ::sigaction(SIGCHLD, &sa, nullptr);
    if (result != 0)
       return systemError(errno, ERROR_LOCATION);
    else
@@ -390,7 +376,7 @@ SignalBlocker::~SignalBlocker()
       if (pImpl_->blocked)
       {
          // restore old mask
-         int result = ::pthread_sigmask(SIG_SETMASK, &(pImpl_->oldMask), NULL);
+         int result = ::pthread_sigmask(SIG_SETMASK, &(pImpl_->oldMask), nullptr);
          if (result != 0)
             LOG_ERROR(systemError(result, ERROR_LOCATION));
       }
@@ -426,7 +412,7 @@ core::Error ignoreSignal(SignalType signal)
    if (sig < 0)
       return systemError(EINVAL, ERROR_LOCATION);
    
-   return ignoreSig(sig);
+   return posix::ignoreSignal(sig);
 }   
 
 
@@ -438,7 +424,7 @@ Error useDefaultSignalHandler(SignalType signal)
    struct sigaction sa;
    ::memset(&sa, 0, sizeof sa);
    sa.sa_handler = SIG_DFL;
-   int result = ::sigaction(sig, &sa, NULL);
+   int result = ::sigaction(sig, &sa, nullptr);
    if (result != 0)
    {
       Error error = systemError(result, ERROR_LOCATION);
@@ -467,28 +453,7 @@ unsigned int effectiveUserId()
 
 FilePath userHomePath(std::string envOverride)
 {
-   using namespace boost::algorithm;
-
-   // use environment override if specified
-   if (!envOverride.empty())
-   {
-      for (split_iterator<std::string::iterator> it =
-           make_split_iterator(envOverride, first_finder("|", is_iequal()));
-           it != split_iterator<std::string::iterator>();
-           ++it)
-      {
-         std::string envHomePath = system::getenv(boost::copy_range<std::string>(*it));
-         if (!envHomePath.empty())
-         {
-            FilePath userHomePath(envHomePath);
-            if (userHomePath.exists())
-               return userHomePath;
-         }
-      }
-   }
-
-   // otherwise use standard unix HOME
-   return FilePath(system::getenv("HOME"));
+   return User::getUserHomePath(envOverride);
 }
 
 FilePath userSettingsPath(const FilePath& userHomeDirectory,
@@ -498,7 +463,7 @@ FilePath userSettingsPath(const FilePath& userHomeDirectory,
    std::string lower = appName;
    boost::to_lower(lower);
 
-   FilePath path = userHomeDirectory.childPath("." + lower);
+   FilePath path = userHomeDirectory.completeChildPath("." + lower);
    if (ensureDirectory)
    {
       Error error = path.ensureDirectory();
@@ -614,7 +579,7 @@ Error getOpenFds(pid_t pid, std::vector<uint32_t>* pFds)
    {
       FilePath path(info.absolutePath());
 
-      boost::optional<uint32_t> fd = safe_convert::stringTo<uint32_t>(path.filename());
+      boost::optional<uint32_t> fd = safe_convert::stringTo<uint32_t>(path.getFilename());
       if (fd)
       {
          pFds->push_back(fd.get());
@@ -670,12 +635,14 @@ Error closeChildFileDescriptorsFrom(pid_t childPid, int pipeFd, uint32_t fdStart
    {
       for (uint32_t fd : fds)
       {
-         error = posixCall<std::size_t>(boost::bind(::write,
-                                                    pipeFd,
-                                                    &fd,
-                                                    4),
-                                        ERROR_LOCATION,
-                                        &written);
+         error = posix::posixCall<std::size_t>(
+            boost::bind(
+               ::write,
+               pipeFd,
+               &fd,
+               4),
+            ERROR_LOCATION,
+            &written);
 
          if (error)
          {
@@ -690,12 +657,14 @@ Error closeChildFileDescriptorsFrom(pid_t childPid, int pipeFd, uint32_t fdStart
    // this prevents the child from being stuck in limbo or interpreting its
    // actual stdin as fds
    int close = -1;
-   Error closeError = posixCall<std::size_t>(boost::bind(::write,
-                                                         pipeFd,
-                                                         &close,
-                                                         4),
-                                             ERROR_LOCATION,
-                                             &written);
+   Error closeError = posix::posixCall<std::size_t>(
+      boost::bind(
+         ::write,
+         pipeFd,
+         &close,
+         4),
+      ERROR_LOCATION,
+      &written);
 
    if (closeError)
    {
@@ -809,7 +778,7 @@ int clearSignalMask()
 {
    sigset_t blockNoneMask;
    sigemptyset(&blockNoneMask);
-   return ::pthread_sigmask(SIG_SETMASK, &blockNoneMask, NULL);
+   return ::pthread_sigmask(SIG_SETMASK, &blockNoneMask, nullptr);
 }
 
 } // namespace signal_safe
@@ -846,8 +815,8 @@ void setStandardStreamsToDevNull()
 
 bool isHiddenFile(const FilePath& filePath) 
 {
-   std::string filename = filePath.filename() ;
-   return (!filename.empty() && (filename[0] == '.')) ;
+   std::string filename = filePath.getFilename();
+   return (!filename.empty() && (filename[0] == '.'));
 }  
 
 bool isHiddenFile(const FileInfo& fileInfo)
@@ -857,7 +826,7 @@ bool isHiddenFile(const FileInfo& fileInfo)
 
 bool isReadOnly(const FilePath& filePath)
 {
-   if (::access(filePath.absolutePath().c_str(), W_OK) == -1)
+   if (::access(filePath.getAbsolutePath().c_str(), W_OK) == -1)
    {
       if (errno == EACCES)
       {
@@ -890,7 +859,7 @@ bool stdoutIsTerminal()
 std::string generateUuid(bool includeDashes)
 {
    // generaate the uuid and convert it to a strting
-   uuid_t uuid ;
+   uuid_t uuid;
    ::uuid_generate_random(uuid);
    char uuidBuffer[40];
    ::uuid_unparse_lower(uuid, uuidBuffer);
@@ -947,7 +916,7 @@ Error executablePath(const char * argv0,
 
    // use argv[0] and initial path
    FilePath initialPath = FilePath::initialPath();
-   executablePath = initialPath.complete(argv0).absolutePath();
+   executablePath = initialPath.completePath(argv0).getAbsolutePath();
 
 #endif
 
@@ -967,8 +936,8 @@ Error installPath(const std::string& relativeToExecutable,
       return error;
 
    // fully resolve installation path relative to executable
-   FilePath installPath = executablePath.parent().complete(relativeToExecutable);
-   return realPath(installPath.absolutePath(), pInstallPath);
+   FilePath installPath = executablePath.getParent().completePath(relativeToExecutable);
+   return realPath(installPath.getAbsolutePath(), pInstallPath);
 }
 
 void fixupExecutablePath(FilePath* pExePath)
@@ -978,7 +947,7 @@ void fixupExecutablePath(FilePath* pExePath)
 
 void abort()
 {
-	::abort();
+   ::abort();
 }
 
 Error terminateProcess(PidType pid)
@@ -1024,7 +993,7 @@ std::vector<SubprocInfo> getSubprocessesViaPgrep(PidType pid)
    {
       boost::regex re("^(\\d+)\\s+(.+)");
       std::vector<std::string> lines = algorithm::split(result.stdOut, "\n");
-      BOOST_FOREACH(const std::string& line, lines)
+      for (const std::string& line : lines)
       {
          if (boost::algorithm::trim_copy(line).empty())
          {
@@ -1060,7 +1029,7 @@ std::vector<SubprocInfo> getSubprocessesMac(PidType pid)
 {
    std::vector<SubprocInfo> subprocs;
 
-   int result = proc_listchildpids(pid, NULL, 0);
+   int result = proc_listchildpids(pid, nullptr, 0);
    if (result > 0)
    {
       std::vector<PidType> buffer(result, 0);
@@ -1081,7 +1050,7 @@ std::vector<SubprocInfo> getSubprocessesMac(PidType pid)
          if (!path.empty())
          {
             core::FilePath exePath(path);
-            info.exe = exePath.filename();
+            info.exe = exePath.getFilename();
          }
          subprocs.push_back(info);
       }
@@ -1119,17 +1088,17 @@ std::vector<SubprocInfo> getSubprocessesViaProcFs(PidType pid)
    //    4075 (My )(great Program) S 4074 ....
 
    std::vector<FilePath> children;
-   Error error = procFsPath.children(&children);
+   Error error = procFsPath.getChildren(children);
    if (error)
    {
       LOG_ERROR(error);
       return subprocs;
    }
 
-   BOOST_FOREACH(const FilePath& child, children)
+   for (const FilePath& child : children)
    {
       // only interested in the numeric directories (pid)
-      std::string filename = child.filename();
+      std::string filename = child.getFilename();
       bool isNumber = true;
       for (std::string::const_iterator k = filename.begin(); k != filename.end(); ++k)
       {
@@ -1145,7 +1114,7 @@ std::vector<SubprocInfo> getSubprocessesViaProcFs(PidType pid)
 
       // load the stat file
       std::string contents;
-      FilePath statFile(child.complete("stat"));
+      FilePath statFile(child.completePath("stat"));
       Error error = rstudio::core::readStringFromFile(statFile, &contents);
       if (error)
       {
@@ -1226,6 +1195,41 @@ std::vector<SubprocInfo> getSubprocesses(PidType pid)
 #endif
 }
 
+#ifdef __APPLE__
+
+FilePath currentWorkingDirMac(PidType pid)
+{
+   struct proc_vnodepathinfo info;
+
+   int size = ::proc_pidinfo(
+            pid, PROC_PIDVNODEPATHINFO, 0,
+            &info, PROC_PIDVNODEPATHINFO_SIZE);
+
+   // check for explicit failure
+   if (size <= 0)
+   {
+      LOG_ERROR(systemError(errno, ERROR_LOCATION));
+      return FilePath();
+   }
+
+   // check for failure to write all required bytes
+   if (size < gsl::narrow_cast<int>(PROC_PIDVNODEPATHINFO_SIZE))
+   {
+      using namespace boost::system::errc;
+      LOG_ERROR(systemError(not_enough_memory, ERROR_LOCATION));
+      return FilePath();
+   }
+
+   // ok, we can return the path
+   return FilePath(info.pvi_cdir.vip_path);
+}
+
+#endif // __APPLE__
+
+
+#ifndef __APPLE__
+
+// NOTE: disabled on macOS; prefer using 'currentWorkingDirMac()'
 FilePath currentWorkingDirViaLsof(PidType pid)
 {
    // lsof -a -p PID -d cwd -Fn
@@ -1271,7 +1275,6 @@ FilePath currentWorkingDirViaLsof(PidType pid)
    return FilePath();
 }
 
-#ifndef __APPLE__
 FilePath currentWorkingDirViaProcFs(PidType pid)
 {
    core::FilePath procFsPath("/proc");
@@ -1285,7 +1288,7 @@ FilePath currentWorkingDirViaProcFs(PidType pid)
       return FilePath();
 
    // /proc/PID/cwd is a symbolic link to the process' current working directory
-   FilePath pidPath = procFsPath.complete(procId).complete("cwd");
+   FilePath pidPath = procFsPath.completePath(procId).completePath("cwd");
    if (pidPath.isSymlink())
       return pidPath.resolveSymlink();
    else
@@ -1296,7 +1299,7 @@ FilePath currentWorkingDirViaProcFs(PidType pid)
 FilePath currentWorkingDir(PidType pid)
 {
 #ifdef __APPLE__
-   return currentWorkingDirViaLsof(pid);
+   return currentWorkingDirMac(pid);
 #else
    return currentWorkingDirViaProcFs(pid);
 #endif
@@ -1507,7 +1510,7 @@ namespace  {
 
 void toPids(const std::vector<std::string>& lines, std::vector<PidType>* pPids)
 {
-   BOOST_FOREACH(const std::string& line, lines)
+   for (const std::string& line : lines)
    {
       PidType pid = safe_convert::stringTo<PidType>(line, -1);
       if (pid != -1)
@@ -1548,13 +1551,13 @@ Error processInfo(const std::string& process,
    pInfo->clear();
 
    // declear directory iterator
-   DIR *pDir = NULL;
+   DIR *pDir = nullptr;
 
    try
    {
       // open the /proc directory
       pDir = ::opendir("/proc");
-      if (pDir == NULL)
+      if (pDir == nullptr)
          return systemError(errno, ERROR_LOCATION);
 
       struct dirent *pDirent;
@@ -1592,7 +1595,7 @@ Error processInfo(const std::string& process,
    }
    CATCH_UNEXPECTED_EXCEPTION
 
-   if (pDir != NULL)
+   if (pDir != nullptr)
       ::closedir(pDir);
 
    return Success();
@@ -1637,7 +1640,7 @@ Error processInfo(pid_t pid, ProcessInfo* pInfo)
 
    // stat the file to determine it's owner
    struct stat st;
-   if (::stat(cmdlineFile.absolutePath().c_str(), &st) == -1)
+   if (::stat(cmdlineFile.getAbsolutePath().c_str(), &st) == -1)
    {
       Error error = systemError(errno, ERROR_LOCATION);
       error.addProperty("path", cmdlineFile);
@@ -1645,8 +1648,8 @@ Error processInfo(pid_t pid, ProcessInfo* pInfo)
    }
 
    // get the username
-   core::system::user::User user;
-   error = core::system::user::userFromId(st.st_uid, &user);
+   core::system::User user;
+   error = User::getUserFromIdentifier(st.st_uid, user);
    if (error)
       return error;
 
@@ -1684,8 +1687,8 @@ Error processInfo(pid_t pid, ProcessInfo* pInfo)
    pInfo->pid = pid;
    pInfo->ppid = ppid;
    pInfo->pgrp = pgrp;
-   pInfo->username = user.username;
-   pInfo->exe = FilePath(cmdline).filename();
+   pInfo->username = user.getUsername();
+   pInfo->exe = FilePath(cmdline).getFilename();
    pInfo->state = state;
    pInfo->arguments = commandVector;
 
@@ -1744,7 +1747,7 @@ Error ProcessInfo::creationTime(boost::posix_time::ptime* pCreationTime) const
    Error error = core::readStringVectorFromFile(FilePath("/proc/stat"), &lines);
    if (error)
       return error;
-   BOOST_FOREACH(const std::string& line, lines)
+   for (const std::string& line : lines)
    {
       if (boost::algorithm::starts_with(line, "btime"))
       {
@@ -1773,7 +1776,7 @@ Error ProcessInfo::creationTime(boost::posix_time::ptime* pCreationTime) const
    std::string dir = boost::str(fmt % pid);
    FilePath procDir(dir);
    std::vector<std::string> fields;
-   error = readStatFields(procDir.childPath("stat"), 22, &fields);
+   error = readStatFields(procDir.completeChildPath("stat"), 22, &fields);
    if (error)
       return error;
 
@@ -1829,7 +1832,7 @@ Error processInfo(const std::string& process, std::vector<ProcessInfo>* pInfo, b
                            result.stdOut,
                            boost::algorithm::is_any_of("\n"));
 
-   BOOST_FOREACH(const std::string& line, lines)
+   for (const std::string& line : lines)
    {
       if (line.empty()) continue;
        
@@ -1882,9 +1885,9 @@ Error ipAddresses(std::vector<IpAddress>* pAddresses,
       return systemError(errno, ERROR_LOCATION);
 
    // iterate through the linked list
-   for (struct ifaddrs* pAddr = pAddrs; pAddr != NULL; pAddr = pAddr->ifa_next)
+   for (struct ifaddrs* pAddr = pAddrs; pAddr != nullptr; pAddr = pAddr->ifa_next)
    {
-      if (pAddr->ifa_addr == NULL)
+      if (pAddr->ifa_addr == nullptr)
          continue;
 
       // filter out non-ip addresses
@@ -1898,7 +1901,7 @@ Error ipAddresses(std::vector<IpAddress>* pAddresses,
                         (family == AF_INET) ? sizeof(struct sockaddr_in) :
                                               sizeof(struct sockaddr_in6),
                         host, NI_MAXHOST,
-                        NULL, 0, NI_NUMERICHOST) != 0)
+                        nullptr, 0, NI_NUMERICHOST) != 0)
       {
          LOG_ERROR(systemError(errno, ERROR_LOCATION));
          continue;
@@ -1935,13 +1938,7 @@ Error restrictCoreDumps()
 
 Error enableCoreDumps()
 {
-#ifndef __APPLE__
-   int res = ::prctl(PR_SET_DUMPABLE, 1);
-   if (res == -1)
-      return systemError(errno, ERROR_LOCATION);
-#endif
-
-   return Success();
+   return posix::enableCoreDumps();
 }
 
 void printCoreDumpable(const std::string& context)
@@ -1962,7 +1959,7 @@ void printCoreDumpable(const std::string& context)
 
    // ptrace
 #ifndef __APPLE__
-   int dumpable = ::prctl(PR_GET_DUMPABLE, NULL, NULL, NULL, NULL);
+   int dumpable = ::prctl(PR_GET_DUMPABLE, nullptr, nullptr, nullptr, nullptr);
    if (dumpable == -1)
       LOG_ERROR(systemError(errno, ERROR_LOCATION));
    ostr << "  pr_get_dumpable: " << dumpable << std::endl;
@@ -2119,9 +2116,9 @@ Error launchChildProcess(std::string path,
    // error
    if (pid < 0)
    {
-      Error error = systemError(errno, ERROR_LOCATION) ;
-      error.addProperty("commmand", path) ;
-      return error ;
+      Error error = systemError(errno, ERROR_LOCATION);
+      error.addProperty("commmand", path);
+      return error;
    }
 
    // child
@@ -2146,9 +2143,9 @@ Error launchChildProcess(std::string path,
 
    // parent
    if (pProcessId)
-      *pProcessId = pid ;
+      *pProcessId = pid;
 
-   return Success() ;
+   return Success();
 }
 
 Error runProcess(const std::string& path,
@@ -2172,6 +2169,12 @@ Error runProcess(const std::string& path,
       if (error)
          return error;
    }
+   else
+   {
+      // set limits - calls may fail if attempting to set greater than max allowed values
+      // since the user is potentially unprivileged
+      setProcessLimits(config.limits);
+   }
 
    // clear the signal mask so the child process can handle whatever
    // signals it wishes to
@@ -2181,8 +2184,8 @@ Error runProcess(const std::string& path,
 
    // get current user (before closing file handles since
    // we might be using a PAM module that has open FDs...)
-   user::User user;
-   error = user::currentUser(&user);
+   User user;
+   error = User::getCurrentUser(user);
    if (error)
       return error;
 
@@ -2214,9 +2217,9 @@ Error runProcess(const std::string& path,
    copyEnvironmentVar("PATH", &env);
    copyEnvironmentVar("MANPATH", &env);
    copyEnvironmentVar("LANG", &env);
-   core::system::setenv(&env, "USER", user.username);
-   core::system::setenv(&env, "LOGNAME", user.username);
-   core::system::setenv(&env, "HOME", user.homeDirectory);
+   core::system::setenv(&env, "USER", user.getUsername());
+   core::system::setenv(&env, "LOGNAME", user.getUsername());
+   core::system::setenv(&env, "HOME", user.getHomePath().getAbsolutePath());
    copyEnvironmentVar("SHELL", &env);
 
    // apply config filter if we have one
@@ -2277,61 +2280,6 @@ Error runProcess(const std::string& path,
    return error;
 }
 
-// simple cass to encapsulate parent-child
-// relationship of processes
-struct ProcessTreeNode
-{
-   boost::shared_ptr<ProcessInfo> data;
-   std::vector<boost::shared_ptr<ProcessTreeNode> > children;
-};
-
-// process tree, indexed by pid
-typedef std::map<pid_t, boost::shared_ptr<ProcessTreeNode> > ProcessTreeT;
-
-void createProcessTree(const std::vector<ProcessInfo>& processes,
-                       ProcessTreeT *pOutTree)
-{
-   // first pass, create the nodes in the tree
-   BOOST_FOREACH(const ProcessInfo& process, processes)
-   {
-      ProcessTreeT::iterator iter = pOutTree->find(process.pid);
-      if (iter == pOutTree->end())
-      {
-         // process not found, so create a new entry for it
-         boost::shared_ptr<ProcessTreeNode> nodePtr = boost::shared_ptr<ProcessTreeNode>(
-                                                         new ProcessTreeNode());
-
-         nodePtr->data = boost::shared_ptr<ProcessInfo>(new ProcessInfo(process));
-
-         (*pOutTree)[process.pid] = nodePtr;
-      }
-   }
-
-   // second pass, link the nodes together
-   BOOST_FOREACH(ProcessTreeT::value_type& element, *pOutTree)
-   {
-      pid_t parent = element.second->data->ppid;
-      ProcessTreeT::iterator iter = pOutTree->find(parent);
-
-      // if we cannot find the parent in the tree, move on
-      if (iter == pOutTree->end())
-         continue;
-
-      // add this node to its parent's children
-      iter->second->children.push_back(element.second);
-   }
-}
-
-void getChildren(const boost::shared_ptr<ProcessTreeNode>& node,
-                 std::vector<ProcessInfo> *pOutChildren)
-{
-   BOOST_FOREACH(const boost::shared_ptr<ProcessTreeNode>& child, node->children)
-   {
-      pOutChildren->push_back(*child->data.get());
-      getChildren(child, pOutChildren);
-   }
-}
-
 Error getChildProcesses(std::vector<ProcessInfo> *pOutProcesses)
 {
    return getChildProcesses(::getpid(), pOutProcesses);
@@ -2382,7 +2330,7 @@ Error terminateChildProcesses(pid_t pid,
    if (error)
       return error;
 
-   BOOST_FOREACH(const ProcessInfo& process, childProcesses)
+   for (const ProcessInfo& process : childProcesses)
    {
       if (::kill(process.pid, signal) != 0)
       {
@@ -2392,7 +2340,7 @@ Error terminateChildProcesses(pid_t pid,
          // suppress that particular error to prevent bogus error states.
          Error error = systemError(errno, ERROR_LOCATION);
 #ifdef __APPLE__
-         if (error.code() != boost::system::errc::no_such_process)
+         if (error != systemError(boost::system::errc::no_such_process, ErrorLocation()))
 #endif
             LOG_ERROR(error);
       }
@@ -2405,10 +2353,10 @@ Error terminateChildProcesses(pid_t pid,
 
 bool isUserNotFoundError(const Error& error)
 {
-   return error.code() == boost::system::errc::permission_denied;
+   return error == systemError(boost::system::errc::permission_denied, ErrorLocation());
 }
 
-Error userBelongsToGroup(const user::User& user,
+Error userBelongsToGroup(const User& user,
                          const std::string& groupName,
                          bool* pBelongs)
 {
@@ -2419,7 +2367,7 @@ Error userBelongsToGroup(const user::User& user,
       return error;
 
    // see if the group id matches the user's group id
-   if (user.groupId == group.groupId)
+   if (user.getGroupId() == group.groupId)
    {
       *pBelongs = true;
    }
@@ -2428,7 +2376,7 @@ Error userBelongsToGroup(const user::User& user,
    {
       *pBelongs = std::find(group.members.begin(),
                             group.members.end(),
-                            user.username) != group.members.end();
+                            user.getUsername()) != group.members.end();
    }
 
    return Success();
@@ -2443,7 +2391,7 @@ Error userBelongsToGroup(const user::User& user,
 
 bool realUserIsRoot()
 {
-   return ::getuid() == 0;
+   return posix::realUserIsRoot();
 }
 
 bool effectiveUserIsRoot()
@@ -2451,77 +2399,27 @@ bool effectiveUserIsRoot()
    return ::geteuid() == 0;
 }
 
-namespace {
-
-Error restorePrivImpl(uid_t uid)
-{
-   // reset error state
-   errno = 0;
-
-   // set effective user to saved privid
-   if (::seteuid(uid) < 0)
-      return systemError(errno, ERROR_LOCATION);
-   // verify
-   if (::geteuid() != uid)
-      return systemError(EACCES, ERROR_LOCATION);
-
-   // get user info to use in group calls
-   struct passwd* pPrivPasswd = ::getpwuid(uid);
-   if (pPrivPasswd == NULL)
-      return systemError(errno, ERROR_LOCATION);
-
-   // supplemental groups
-   if (::initgroups(pPrivPasswd->pw_name, pPrivPasswd->pw_gid) < 0)
-      return systemError(errno, ERROR_LOCATION);
-
-   // set effective group
-   if (::setegid(pPrivPasswd->pw_gid) < 0)
-      return systemError(errno, ERROR_LOCATION);
-   // verify
-   if (::getegid() != pPrivPasswd->pw_gid)
-      return systemError(EACCES, ERROR_LOCATION);
-
-   // success
-   return Success();
-}
-
-} // anonymous namespace
-
-// privilege manipulation for systems that support setresuid/getresuid
-#if defined(HAVE_SETRESUID)
-
 Error temporarilyDropPriv(const std::string& newUsername)
 {
    // clear error state
    errno = 0;
 
    // get user info
-   user::User user;
-   Error error = userFromUsername(newUsername, &user);
+   User user;
+   Error error = User::getUserFromIdentifier(newUsername, user);
    if (error)
       return error;
 
-   // init supplemental group list
-   // NOTE: if porting to CYGWIN may need to call getgroups/setgroups
-   // after initgroups -- more research required to confirm
-   if (::initgroups(user.username.c_str(), user.groupId) < 0)
-      return systemError(errno, ERROR_LOCATION);
-
-   // set group and verify
-   if (::setresgid(-1, user.groupId, ::getegid()) < 0)
-      return systemError(errno, ERROR_LOCATION);
-   if (::getegid() != user.groupId)
-      return systemError(EACCES, ERROR_LOCATION);
-
-   // set user and verify
-   if (::setresuid(-1, user.userId, ::geteuid()) < 0)
-      return systemError(errno, ERROR_LOCATION);
-   if (::geteuid() != user.userId)
-      return systemError(EACCES, ERROR_LOCATION);
-
-   // success
-   return Success();
+   return posix::temporarilyDropPrivileges(user);
 }
+
+Error restorePriv()
+{
+   return posix::restorePrivileges();
+}
+
+// privilege manipulation for systems that support setresuid/getresuid
+#if defined(HAVE_SETRESUID)
 
 Error permanentlyDropPriv(const std::string& newUsername)
 {
@@ -2529,71 +2427,33 @@ Error permanentlyDropPriv(const std::string& newUsername)
    errno = 0;
 
    // get user info
-   user::User user;
-   Error error = userFromUsername(newUsername, &user);
+   User user;
+   Error error = User::getUserFromIdentifier(newUsername, user);
    if (error)
       return error;
 
    // supplemental group list
-   if (::initgroups(user.username.c_str(), user.groupId) < 0)
+   if (::initgroups(user.getUsername().c_str(), user.getGroupId()) < 0)
       return systemError(errno, ERROR_LOCATION);
 
    // set group
-   if (::setresgid(user.groupId, user.groupId, user.groupId) < 0)
+   if (::setresgid(user.getGroupId(), user.getGroupId(), user.getGroupId()) < 0)
       return systemError(errno, ERROR_LOCATION);
    // verify
    gid_t rgid, egid, sgid;
    if (::getresgid(&rgid, &egid, &sgid) < 0)
       return systemError(errno, ERROR_LOCATION);
-   if (rgid != user.groupId || egid != user.groupId || sgid != user.groupId)
+   if (rgid != user.getGroupId() || egid != user.getGroupId() || sgid != user.getGroupId())
       return systemError(EACCES, ERROR_LOCATION);
 
    // set user
-   if (::setresuid(user.userId, user.userId, user.userId) < 0)
+   if (::setresuid(user.getUserId(), user.getUserId(), user.getUserId()) < 0)
       return systemError(errno, ERROR_LOCATION);
    // verify
    uid_t ruid, euid, suid;
    if (::getresuid(&ruid, &euid, &suid) < 0)
       return systemError(errno, ERROR_LOCATION);
-   if (ruid != user.userId || euid != user.userId || suid != user.userId)
-      return systemError(EACCES, ERROR_LOCATION);
-
-   // success
-   return Success();
-}
-
-Error restorePriv()
-{
-   // reset error state
-   errno = 0;
-
-   // set user
-   uid_t ruid, euid, suid;
-   if (::getresuid(&ruid, &euid, &suid) < 0)
-      return systemError(errno, ERROR_LOCATION);
-   if (::setresuid(-1, suid, -1) < 0)
-      return systemError(errno, ERROR_LOCATION);
-   // verify
-   if (::geteuid() != suid)
-      return systemError(EACCES, ERROR_LOCATION);
-
-   // get saved user info to use in group calls
-   struct passwd* pPrivPasswd = ::getpwuid(suid);
-   if (pPrivPasswd == NULL)
-      return systemError(errno, ERROR_LOCATION);
-
-   // supplemental groups
-   if (::initgroups(pPrivPasswd->pw_name, pPrivPasswd->pw_gid) < 0)
-      return systemError(errno, ERROR_LOCATION);
-
-   // set group
-   gid_t rgid, egid, sgid;
-   if (::getresgid(&rgid, &egid, &sgid) < 0)
-      return systemError(errno, ERROR_LOCATION);
-   if (::setresgid(-1, sgid, -1) < 0)
-      return systemError(errno, ERROR_LOCATION);
-   // verify
-   if (::getegid() != sgid)
+   if (ruid != user.getUserId() || euid != user.getUserId() || suid != user.getUserId())
       return systemError(EACCES, ERROR_LOCATION);
 
    // success
@@ -2604,64 +2464,7 @@ Error restorePriv()
 #else
 
 namespace {
-   uid_t s_privUid ;
-}
-
-Error temporarilyDropPriv(const std::string& newUsername)
-{
-   // clear error state
-   errno = 0;
-
-   // get user info
-   user::User user;
-   Error error = userFromUsername(newUsername, &user);
-   if (error)
-      return error;
-
-   // init supplemental group list
-   if (::initgroups(user.username.c_str(), user.groupId) < 0)
-      return systemError(errno, ERROR_LOCATION);
-
-   // set group
-
-   // save old EGUID
-   gid_t oldEGUID = ::getegid();
-
-   // copy EGUID to SGID
-   if (::setregid(::getgid(), oldEGUID) < 0)
-      return systemError(errno, ERROR_LOCATION);
-
-   // set new EGID
-   if (::setegid(user.groupId) < 0)
-      return systemError(errno, ERROR_LOCATION);
-
-   // verify
-   if (::getegid() != user.groupId)
-      return systemError(EACCES, ERROR_LOCATION);
-
-
-   // set user
-
-   // save old EUID
-   uid_t oldEUID = ::geteuid();
-
-   // copy EUID to SUID
-   if (::setreuid(::getuid(), oldEUID) < 0)
-      return systemError(errno, ERROR_LOCATION);
-
-   // set new EUID
-   if (::seteuid(user.userId) < 0)
-      return systemError(errno, ERROR_LOCATION);
-
-   // verify
-   if (::geteuid() != user.userId)
-      return systemError(EACCES, ERROR_LOCATION);
-
-   // save privilleged user id
-   s_privUid = oldEUID;
-
-   // success
-   return Success();
+   uid_t s_privUid;
 }
 
 Error permanentlyDropPriv(const std::string& newUsername)
@@ -2670,43 +2473,38 @@ Error permanentlyDropPriv(const std::string& newUsername)
    errno = 0;
 
    // get user info
-   user::User user;
-   Error error = userFromUsername(newUsername, &user);
+   User user;
+   Error error = User::getUserFromIdentifier(newUsername, user);
    if (error)
       return error;
 
    // supplemental group list
-   if (::initgroups(user.username.c_str(), user.groupId) < 0)
+   if (::initgroups(user.getUsername().c_str(), user.getGroupId()) < 0)
       return systemError(errno, ERROR_LOCATION);
 
    // set group
-   if (::setregid(user.groupId, user.groupId) < 0)
+   if (::setregid(user.getGroupId(), user.getGroupId()) < 0)
       return systemError(errno, ERROR_LOCATION);
    // verify
-   if (::getgid() != user.groupId || ::getegid() != user.groupId)
+   if (::getgid() != user.getGroupId() || ::getegid() != user.getGroupId())
       return systemError(EACCES, ERROR_LOCATION);
 
    // set user
-   if (::setreuid(user.userId, user.userId) < 0)
+   if (::setreuid(user.getUserId(), user.getUserId()) < 0)
       return systemError(errno, ERROR_LOCATION);
    // verify
-   if (::getuid() != user.userId || ::geteuid() != user.userId)
+   if (::getuid() != user.getUserId() || ::geteuid() != user.getUserId())
       return systemError(EACCES, ERROR_LOCATION);
 
    // success
    return Success();
 }
 
-Error restorePriv()
-{
-   return restorePrivImpl(s_privUid);
-}
-
 #endif
 
 Error restoreRoot()
 {
-   return restorePrivImpl(0);
+   return posix::restoreRoot();
 }
 
 } // namespace system

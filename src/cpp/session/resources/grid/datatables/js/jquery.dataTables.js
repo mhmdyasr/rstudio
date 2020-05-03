@@ -1636,7 +1636,8 @@
     if ( row.nTr === null )
     {
       nTr = nTrIn || document.createElement('tr');
-  
+      nTr.setAttribute("data-row", iRow + oSettings._iDisplayStart);
+
       row.nTr = nTr;
       row.anCells = cells;
   
@@ -2601,7 +2602,13 @@
   
     if ( features.bSort ) {
       $.each( sort, function ( i, val ) {
-        d.order.push( { column: val.col, dir: val.dir } );
+        // if the visible frame is shifted ensure that
+        // we're not accidentally sorting on an unshifted row names col
+        if (val.col === 0) {
+          d.order.push( { column: val.col, dir: val.dir } );
+        } else {
+          d.order.push( { column: val.col + window.dataTableColumnOffset, dir: val.dir } );
+        }
   
         param( 'iSortCol_'+i, val.col );
         param( 'sSortDir_'+i, val.dir );
@@ -5117,7 +5124,14 @@
   function _fnBindAction( n, oData, fn )
   {
     $(n)
-      .bind( 'click.DT', oData, function (e) {
+      // we get a lot more control over these custom events on mousedown vs click 
+      // and functionally to the user it will feel a little more responsive
+      .bind( 'mousedown.DT', oData, function (e) {
+          // our resizer doesn't play nice with the custom jquery click
+          // events. catch when we click on a resizer immediately on
+          // mousedown and exit
+          if (!!e.target && e.target.className === "resizer") return;
+
           n.blur(); // Remove focus outline for mouse users
           fn(e);
         } )

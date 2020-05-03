@@ -1,7 +1,7 @@
 /*
  * EditSession.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -74,6 +74,10 @@ public class EditSession extends JavaScriptObject
 
    public native final void setUseWrapMode(boolean useWrapMode) /*-{
       return this.setUseWrapMode(useWrapMode);
+   }-*/;
+   
+   public native final boolean getUseWrapMode() /*-{
+      return this.getUseWrapMode();
    }-*/;
    
    public native final void setWrapLimitRange(int min, int max) /*-{

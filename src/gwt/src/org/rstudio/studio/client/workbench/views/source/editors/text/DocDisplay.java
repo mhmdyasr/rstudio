@@ -1,7 +1,7 @@
 /*
  * DocDisplay.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -14,13 +14,15 @@
  */
 package org.rstudio.studio.client.workbench.views.source.editors.text;
 
+import java.util.function.BiPredicate;
 import org.rstudio.core.client.Rectangle;
+import org.rstudio.core.client.command.KeySequence;
 
 import java.util.List;
 
-import org.rstudio.core.client.command.KeyboardShortcut.KeySequence;
 import org.rstudio.core.client.events.HasContextMenuHandlers;
 import org.rstudio.core.client.js.JsMap;
+import org.rstudio.core.client.patch.TextChange;
 import org.rstudio.studio.client.common.debugging.model.Breakpoint;
 import org.rstudio.studio.client.common.filetypes.TextFileType;
 import org.rstudio.studio.client.server.Void;
@@ -35,6 +37,7 @@ import org.rstudio.studio.client.workbench.views.source.editors.text.ace.AceComm
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.AceFold;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Anchor;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.LineWidget;
+import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Marker;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Mode.InsertChunkInfo;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Position;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Range;
@@ -66,6 +69,7 @@ import org.rstudio.studio.client.workbench.views.source.events.SaveFileHandler;
 import com.google.gwt.core.client.JavaScriptObject;
 import com.google.gwt.core.client.JsArray;
 import com.google.gwt.core.client.JsArrayString;
+import com.google.gwt.event.dom.client.BlurHandler;
 import com.google.gwt.event.dom.client.FocusHandler;
 import com.google.gwt.event.dom.client.HasFocusHandlers;
 import com.google.gwt.event.dom.client.HasKeyDownHandlers;
@@ -75,6 +79,7 @@ import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.user.client.ui.IsWidget;
 import com.google.gwt.user.client.ui.Widget;
 
+import org.rstudio.studio.client.workbench.views.source.events.ScrollYEvent;
 import org.rstudio.studio.client.workbench.views.source.model.DirtyState;
 import org.rstudio.studio.client.workbench.views.source.model.RnwCompletionContext;
 import org.rstudio.studio.client.workbench.views.source.model.SourcePosition;
@@ -112,6 +117,7 @@ public interface DocDisplay extends HasValueChangeHandlers<Void>,
    JsArrayString getLines(int startRow, int endRow);
    void setCode(String code, boolean preserveCursorPosition);
    void insertCode(String code, boolean blockMode);
+   void applyChanges(TextChange[] changes);
    void focus();
    boolean isFocused();
    void print();
@@ -177,6 +183,7 @@ public interface DocDisplay extends HasValueChangeHandlers<Void>,
    void setShowLineNumbers(boolean on);
    void setUseSoftTabs(boolean on);
    void setUseWrapMode(boolean on);
+   boolean getUseWrapMode();
    void setTabSize(int tabSize);
    void autoDetectIndentation(boolean on);
    void setShowPrintMargin(boolean on);
@@ -223,6 +230,7 @@ public interface DocDisplay extends HasValueChangeHandlers<Void>,
 
    HandlerRegistration addAttachHandler(AttachEvent.Handler handler);
    HandlerRegistration addEditorFocusHandler(FocusHandler handler);
+   HandlerRegistration addEditorBlurHandler(BlurHandler handler);
    HandlerRegistration addCommandClickHandler(CommandClickEvent.Handler handler);
    HandlerRegistration addFindRequestedHandler(FindRequestedEvent.Handler handler);
    HandlerRegistration addCursorChangedHandler(CursorChangedHandler handler);
@@ -365,6 +373,8 @@ public interface DocDisplay extends HasValueChangeHandlers<Void>,
       (BreakpointSetEvent.Handler handler);
    HandlerRegistration addBreakpointMoveHandler
       (BreakpointMoveEvent.Handler handler);
+   HandlerRegistration addScrollYHandler
+      (ScrollYEvent.Handler handler);
    void addOrUpdateBreakpoint(Breakpoint breakpoint);
    void removeBreakpoint(Breakpoint breakpoint);
    void removeAllBreakpoints();
@@ -376,6 +386,8 @@ public interface DocDisplay extends HasValueChangeHandlers<Void>,
    void clearLint();
    void removeMarkersAtCursorPosition();
    void removeMarkersOnCursorLine();
+   void removeMarkers(BiPredicate<AceAnnotation, Marker> predicate);
+   void removeMarkersAtWord(String word);
    
    void beginCollabSession(CollabEditStartParams params, DirtyState dirtyState);
    boolean hasActiveCollabSession();
@@ -447,4 +459,5 @@ public interface DocDisplay extends HasValueChangeHandlers<Void>,
    void goToLineEnd();
    
    void toggleTokenInfo();
+   void setTextInputAriaLabel(String label);
 }

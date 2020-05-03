@@ -1,7 +1,7 @@
 /*
  * Edit.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-12 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -44,7 +44,7 @@ public class Edit implements ShowEditorHandler
    public Edit(Display view,
                EditServerOperations server)
    {
-      view_ = view ;
+      view_ = view;
       server_ = server;
    }
 

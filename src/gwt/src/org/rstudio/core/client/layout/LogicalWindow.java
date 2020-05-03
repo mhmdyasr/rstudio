@@ -1,7 +1,7 @@
 /*
  * LogicalWindow.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -63,6 +63,18 @@ public class LogicalWindow implements HasWindowStateChangeHandlers,
       normal_.focus();
    }
 
+   public boolean visible()
+   {
+      switch (state_)
+      {
+         case HIDE:
+         case MINIMIZE:
+            return false;
+         default:
+            return true;
+      }
+   }
+
    public Widget getActiveWidget()
    {
       switch (state_)
@@ -104,16 +116,8 @@ public class LogicalWindow implements HasWindowStateChangeHandlers,
 
    public void transitionToState(WindowState newState)
    {
-      if (newState == MAXIMIZE)
-         normal_.addStyleDependentName("maximized");
-      else
-         normal_.removeStyleDependentName("maximized");
-
-      if (newState == EXCLUSIVE)
-         normal_.addStyleDependentName("exclusive");
-      else
-         normal_.removeStyleDependentName("exclusive");
-
+      normal_.setMaximizedDependentState(newState);
+      normal_.setExclusiveDependentState(newState);
       state_ = newState;
 
       if (getActiveWidget() == normal_)

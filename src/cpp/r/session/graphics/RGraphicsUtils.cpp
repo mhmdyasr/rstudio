@@ -1,7 +1,7 @@
 /*
  * RGraphicsUtils.cpp
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-20 by RStudio, PBC
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -17,8 +17,10 @@
 
 #include <boost/format.hpp>
 
+#include <shared_core/Error.hpp>
+
+#include <core/Algorithm.hpp>
 #include <core/Log.hpp>
-#include <core/Error.hpp>
 
 #include <r/RExec.hpp>
 #include <r/ROptions.hpp>
@@ -28,6 +30,8 @@
 #define R_USE_PROTOTYPES 1
 #include <R_ext/GraphicsEngine.h>
 #include <R_ext/GraphicsDevice.h>
+
+#include <r/session/RGraphicsConstants.h>
 
 #include <r/RErrorCategory.hpp>
 
@@ -73,7 +77,7 @@ bool hasRequiredGraphicsDevices(std::string* pMessage)
    static QuartzStatus s_quartzStatus;
    if (!s_quartzStatus.isInstalled())
    {
-      if (pMessage != NULL)
+      if (pMessage != nullptr)
       {
          *pMessage = "\nWARNING: The version of R you are running against "
                      "does not support the quartz graphics device (which is "
@@ -100,6 +104,22 @@ bool hasRequiredGraphicsDevices(std::string* pMessage)
 
 } // anonymous namespace
 
+std::string getDefaultBackend()
+{
+   return r::options::getOption<std::string>(
+            kGraphicsOptionBackend,
+            "default",
+            false);
+}
+
+std::string getDefaultAntialiasing()
+{
+   return r::options::getOption<std::string>(
+            kGraphicsOptionAntialias,
+            "default",
+            false);
+}
+
 void setCompatibleEngineVersion(int version)
 {
    s_compatibleEngineVersion = version;
@@ -113,7 +133,7 @@ bool validateRequirements(std::string* pMessage)
    // version too old
    if (engineVersion < 5)
    {
-      if (pMessage != NULL)
+      if (pMessage != nullptr)
       {
          boost::format fmt(
             "R graphics engine version %1% is not supported by RStudio. "
@@ -128,7 +148,7 @@ bool validateRequirements(std::string* pMessage)
    // version too new
    else if (engineVersion > s_compatibleEngineVersion)
    {
-      if (pMessage != NULL)
+      if (pMessage != nullptr)
       {
          boost::format fmt(
             "R graphics engine version %1% is not supported by this "
@@ -150,34 +170,51 @@ bool validateRequirements(std::string* pMessage)
 
 std::string extraBitmapParams()
 {
-#if defined(_WIN32)
-
-   // no extra params for windows
-
-#elif defined(__APPLE__)
-
-   return ", type = \"quartz\", antialias=\"default\"";
-
-#else
-
-   // if bitmapType is Xlib then force cairo if we can
-   if (r::options::getOption<std::string>("bitmapType") == "Xlib")
+   std::vector<std::string> params;
+   
+   std::vector<std::string> supportedBackends;
+   Error error = r::exec::RFunction(".rs.graphics.supportedBackends").call(&supportedBackends);
+   if (error)
    {
-      if (r::util::hasRequiredVersion("2.14") &&
-          r::util::hasCapability("cairo"))
-      {
-         return ", type = \"cairo\"";
-      }
+      LOG_ERROR(error);
+      return "";
    }
+   
+   std::string backend = getDefaultBackend();
+   
+   // if the requested backend is not supported, silently use the default
+   // (this could happen if a package's configuration was migrated from
+   // one machine to another on a different OS)
+   if (backend != "default")
+   {
+      auto it = std::find(supportedBackends.begin(), supportedBackends.end(), backend);
+      if (it == supportedBackends.end())
+         backend = "default";
+   }
+   
+   if (backend != "default")
+      params.push_back("type = \"" + backend + "\"");
+   
+   std::string antialias = getDefaultAntialiasing();
 
+#ifdef _WIN32
+   // fix up antialias for windows backend
+   if ((backend == "windows" || backend == "default") && antialias == "subpixel")
+      antialias = "cleartype";
 #endif
 
-   return "";
+   if (antialias != "default")
+      params.push_back("antialias = \"" + antialias + "\"");
+   
+   if (params.empty())
+      return "";
+   
+   return ", " + core::algorithm::join(params, ", ");
 }
 
 struct RestorePreviousGraphicsDeviceScope::Impl
 {
-   Impl() : pPreviousDevice(NULL) {}
+   Impl() : pPreviousDevice(nullptr) {}
    pGEDevDesc pPreviousDevice;
 };
 
@@ -186,7 +223,7 @@ RestorePreviousGraphicsDeviceScope::RestorePreviousGraphicsDeviceScope()
    : pImpl_(new Impl())
 {
    // save ptr to previously selected device (if there is one)
-   pImpl_->pPreviousDevice = Rf_NoDevices() ? NULL : GEcurrentDevice();
+   pImpl_->pPreviousDevice = Rf_NoDevices() ? nullptr : GEcurrentDevice();
 }
          
 RestorePreviousGraphicsDeviceScope::~RestorePreviousGraphicsDeviceScope()
@@ -194,7 +231,7 @@ RestorePreviousGraphicsDeviceScope::~RestorePreviousGraphicsDeviceScope()
    try
    {
       // reslect the previously selected device if we had one
-      if (pImpl_->pPreviousDevice != NULL)
+      if (pImpl_->pPreviousDevice != nullptr)
          Rf_selectDevice(Rf_ndevNumber(pImpl_->pPreviousDevice->dev));  
    }
    catch(...)
@@ -205,8 +242,8 @@ RestorePreviousGraphicsDeviceScope::~RestorePreviousGraphicsDeviceScope()
 void reportError(const core::Error& error)
 {
    std::string endUserMessage = r::endUserErrorMessage(error);
-   std::string errmsg = ("Graphics error: " + endUserMessage + "\n");
-   REprintf(errmsg.c_str());
+   std::string errmsg = "Graphics error: " + endUserMessage;
+   REprintf("%s\n", errmsg.c_str());
 }
 
 void logAndReportError(const Error& error, const ErrorLocation& location)
